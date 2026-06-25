@@ -1,0 +1,38 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Local/runtime data
+data/
+test_search_files/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+logs/
+
+# Generated/archive artifacts
+*.zip
+dist/
+build/
+.vite/
+
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Local tool/session data
+.claude/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

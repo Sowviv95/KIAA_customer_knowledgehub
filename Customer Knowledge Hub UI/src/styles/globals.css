@@ -1,0 +1,23 @@
+/* Scrollbar — light theme to match #f0f4f8 page background */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #e5e7eb;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(22, 163, 74, 0.35);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #16a34a;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(22, 163, 74, 0.35) #e5e7eb;
+}
