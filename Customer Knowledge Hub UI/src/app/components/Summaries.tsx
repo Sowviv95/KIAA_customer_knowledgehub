@@ -1791,6 +1791,18 @@ function ConvertModal({ candidate, mode, onClose, onConverted }: ConvertModalPro
               <span style={{ color: "#dc2626", fontSize: "0.74rem" }}>{error}</span>
             </div>
           )}
+
+          {/* Quality warnings — non-blocking */}
+          {(!topic.trim() || candidate.evidence_quote.length < 30) && (
+            <div className="rounded-lg px-3 py-2 flex flex-col gap-1" style={{ background: "rgba(217,119,6,0.04)", border: "1px solid rgba(217,119,6,0.12)" }}>
+              {!topic.trim() && (
+                <span style={{ color: "#d97706", fontSize: "0.72rem" }}>No topic assigned — consider adding one for better tracking.</span>
+              )}
+              {candidate.evidence_quote.length < 30 && (
+                <span style={{ color: "#d97706", fontSize: "0.72rem" }}>Short evidence quote — verify source before converting.</span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="px-5 py-3 flex items-center justify-end gap-2" style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}>
@@ -1921,16 +1933,26 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {candidates.length > 0 && (
-            <button onClick={() => downloadCsv(
-              ["ID", "Type", "Title", "Description", "Topic", "Status", "Confidence", "Source File", "Evidence Quote", "Reviewer Action", "Converted To", "Created"],
-              candidates.map((c) => [c.id, c.update_type, c.title, c.description, c.topic, c.status, c.confidence != null ? Math.round(c.confidence * 100) + "%" : "", c.source_file, c.evidence_quote, c.reviewer_action, c.converted_to_type, c.created_at]),
-              "insight_candidates_export",
-            )} className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg"
-              style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.10)", color: "#374151", fontSize: "0.78rem" }}>
-              <Download size={12} /> Export CSV
-            </button>
-          )}
+          {candidates.length > 0 && (() => {
+            const lastGenerated = candidates.reduce((latest, c) => c.created_at > latest ? c.created_at : latest, "");
+            return (
+              <>
+                {lastGenerated && (
+                  <span style={{ color: "#9ca3af", fontSize: "0.62rem" }}>
+                    Last generated: {lastGenerated.slice(0, 16).replace("T", " ")}
+                  </span>
+                )}
+                <button onClick={() => downloadCsv(
+                  ["ID", "Type", "Title", "Description", "Topic", "Status", "Confidence", "Source File", "Evidence Quote", "Reviewer Action", "Converted To", "Created"],
+                  candidates.map((c) => [c.id, c.update_type, c.title, c.description, c.topic, c.status, c.confidence != null ? Math.round(c.confidence * 100) + "%" : "", c.source_file, c.evidence_quote, c.reviewer_action, c.converted_to_type, c.created_at]),
+                  "insight_candidates_export",
+                )} className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg"
+                  style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.10)", color: "#374151", fontSize: "0.78rem" }}>
+                  <Download size={12} /> Export CSV
+                </button>
+              </>
+            );
+          })()}
           {aiStatus?.available && (
             <button onClick={handleExtract} disabled={extracting}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg"
@@ -2060,6 +2082,10 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
             const isConverted = !!c.converted_to_type;
             const isRejectOpen = rejectingId === c.id;
             const isRecent = c.created_at && (Date.now() - new Date(c.created_at).getTime()) < 24 * 60 * 60 * 1000;
+            const confPct = c.confidence != null ? Math.round(c.confidence * 100) : null;
+            const confColor = confPct == null ? "#9ca3af" : confPct >= 80 ? "#16a34a" : confPct >= 50 ? "#d97706" : "#dc2626";
+            const confLabel = confPct == null ? "No score" : confPct >= 80 ? "High" : confPct >= 50 ? "Medium" : "Low";
+            const hasStrongEvidence = c.evidence_quote && c.evidence_quote.length >= 20 && c.source_file;
             return (
               <div key={c.id} className="rounded-xl overflow-hidden" style={{ background: "#ffffff", border: `1px solid ${isConverted ? "rgba(22,163,74,0.15)" : isRecent && c.status === "candidate" ? "rgba(59,130,246,0.2)" : "rgba(0,0,0,0.06)"}` }}>
                 <div className="px-5 py-3.5">
@@ -2079,9 +2105,18 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
                         <CheckCircle size={9} /> Converted to {c.converted_to_type === "requirement" ? "Requirement" : "Follow-up"}
                       </span>
                     )}
-                    {c.confidence != null && (
-                      <span style={{ color: "#9ca3af", fontSize: "0.62rem" }}>
-                        {Math.round(c.confidence * 100)}% confidence
+                    {/* Confidence indicator */}
+                    <span className="px-2 py-0.5 rounded-full flex items-center gap-1" style={{ background: `${confColor}12`, color: confColor, fontSize: "0.58rem", fontWeight: 600, border: `1px solid ${confColor}25` }}>
+                      {confPct != null ? `${confPct}%` : "—"} {confLabel}
+                    </span>
+                    {/* Evidence quality badge */}
+                    {hasStrongEvidence ? (
+                      <span className="px-2 py-0.5 rounded-full flex items-center gap-1" style={{ background: "rgba(22,163,74,0.06)", color: "#16a34a", fontSize: "0.58rem", fontWeight: 600 }}>
+                        <CheckCircle size={7} /> Evidence-backed
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.06)", color: "#d97706", fontSize: "0.58rem", fontWeight: 600 }}>
+                        Weak evidence
                       </span>
                     )}
                     {c.topic && (
@@ -2100,8 +2135,11 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
                   )}
 
                   {/* Evidence quote */}
-                  <div className="mt-3 px-3 py-2 rounded-lg" style={{ background: "rgba(107,114,128,0.04)", borderLeft: "3px solid rgba(22,163,74,0.3)" }}>
-                    <div style={{ color: "#6b7280", fontSize: "0.58rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>Evidence</div>
+                  <div className="mt-3 px-3 py-2 rounded-lg" style={{ background: "rgba(107,114,128,0.04)", borderLeft: `3px solid ${hasStrongEvidence ? "rgba(22,163,74,0.3)" : "rgba(217,119,6,0.3)"}` }}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span style={{ color: "#6b7280", fontSize: "0.58rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Evidence</span>
+                      <span style={{ color: "#16a34a", fontSize: "0.58rem" }}>{c.source_file}</span>
+                    </div>
                     <p style={{ color: "#374151", fontSize: "0.74rem", lineHeight: 1.6, fontStyle: "italic" }}>
                       {c.evidence_quote.length > 300 ? c.evidence_quote.slice(0, 300) + "..." : c.evidence_quote}
                     </p>
@@ -2115,19 +2153,12 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
                     </div>
                   )}
 
-                  {/* Audit lifecycle line */}
-                  <div className="mt-2.5 flex items-center gap-1.5" style={{ color: "#9ca3af", fontSize: "0.64rem" }}>
-                    <Clock size={9} />
-                    {c.status === "candidate" && "Suggested by AI"}
-                    {c.status === "accepted" && !isConverted && "Accepted for review"}
-                    {c.status === "rejected" && "Rejected"}
-                    {isConverted && (
-                      <>Accepted &rarr; Converted to {c.converted_to_type === "requirement" ? "Requirement" : "Follow-up"} &middot; {(c.converted_at || "").slice(0, 10)}</>
-                    )}
-                    <span>&middot;</span>
-                    <FileText size={9} color="#16a34a" />
-                    <span style={{ color: "#16a34a" }}>{c.source_file}</span>
-                    <span>{c.created_at.slice(0, 10)}</span>
+                  {/* Audit lifecycle */}
+                  <div className="mt-2.5 flex items-center gap-3 flex-wrap" style={{ color: "#9ca3af", fontSize: "0.62rem" }}>
+                    <span className="flex items-center gap-1"><Clock size={8} /> Created {c.created_at.slice(0, 16).replace("T", " ")}</span>
+                    {c.reviewed_at && <span className="flex items-center gap-1"><Check size={8} /> Reviewed {c.reviewed_at.slice(0, 16).replace("T", " ")}</span>}
+                    {isConverted && <span className="flex items-center gap-1"><CheckCircle size={8} color="#16a34a" /> Converted {(c.converted_at || "").slice(0, 16).replace("T", " ")}</span>}
+                    {!c.reviewed_at && c.status === "candidate" && <span style={{ color: "#d97706" }}>Awaiting review</span>}
                   </div>
 
                   {/* Inline reject reason input */}

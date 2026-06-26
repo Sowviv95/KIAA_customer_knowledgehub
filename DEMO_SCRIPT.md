@@ -88,6 +88,13 @@ Filter and review candidates:
 - "New" badge on candidates generated in the last 24 hours
 - Status labels: Pending (new), Accepted, Rejected, Converted
 - Extraction result shows new vs already captured counts
+- "Last generated" timestamp shows when insights were last extracted
+- Quality and trust indicators on each candidate card:
+  - Color-coded confidence: High (green, ≥80%), Medium (amber, 50-79%), Low (red, <50%)
+  - "Evidence-backed" badge when source file + substantive evidence quote present
+  - "Weak evidence" badge when evidence is thin
+  - Expanded audit trail: created, reviewed, converted timestamps
+  - "Awaiting review" indicator on pending candidates
 - Click "Accept" to mark as accepted for review
 - Click "Reject" to dismiss — optional reason is recorded
 - Rejected candidates show the reason and can be reset
@@ -100,6 +107,7 @@ On an accepted candidate:
 
 - Click "Convert to Requirement" or "Convert to Follow-up"
 - Review modal opens with editable title, description, topic
+- Quality warnings shown if topic is empty or evidence is thin (non-blocking)
 - For follow-ups: priority, owner, due date fields
 - Source file and evidence quote shown read-only
 - Click "Create Requirement" or "Create Follow-up" to confirm
