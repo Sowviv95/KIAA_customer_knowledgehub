@@ -214,7 +214,7 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
           if (results.length > 0) {
             setMessages((prev) => [...prev, {
               role: "assistant",
-              text: `I found ${results.length} relevant evidence snippet${results.length > 1 ? "s" : ""} in indexed files for "${query}".${scopeNote}${scopeHint} No LLM was called — these are deterministic search results from parsed content.`,
+              text: `I found ${results.length} relevant evidence snippet${results.length > 1 ? "s" : ""} in indexed files for "${query}".${scopeNote}${scopeHint}`,
               searchResults: results,
               mode: "retrieval",
             }]);
@@ -222,7 +222,7 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
             const scopeTip = topicScope !== "All Topics" ? `\n• Switch scope to All Topics for broader results` : "";
             setMessages((prev) => [...prev, {
               role: "assistant",
-              text: `I could not find "${query}" in the indexed files.${scopeNote}\n\nSuggestions:\n• Try different keywords or broader terms${scopeTip}\n• Check whether relevant files have been scanned and parsed in Settings\n• Use the Search Evidence panel on the right for direct FTS5 search`,
+              text: `I could not find "${query}" in the indexed files.${scopeNote}\n\nSuggestions:\n• Try different keywords or broader terms${scopeTip}\n• Check whether relevant files have been scanned and parsed in Settings\n• Use the Search Evidence panel on the right for direct keyword search`,
               mode: "retrieval",
             }]);
           }
@@ -275,7 +275,7 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
       setSearchDone(true);
     } catch (err) {
       setSearchError(err instanceof Error && err.message.includes("fetch")
-        ? "Backend offline — start FastAPI to search."
+        ? "Backend offline — start the backend server to search."
         : err instanceof Error ? err.message : "Search failed");
       setSearchDone(true);
     } finally {
@@ -316,7 +316,7 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
                 <button onClick={() => setUserMode("retrieval")}
                   className="px-2.5 py-1 flex items-center gap-1 transition-colors"
                   style={{ background: userMode === "retrieval" ? "#7c3aed" : "transparent", color: userMode === "retrieval" ? "#fff" : "#6b7280", fontSize: "0.68rem", fontWeight: 600 }}
-                  title="FTS5 search over parsed files — no LLM">
+                  title="Keyword search over parsed files — no LLM">
                   <Search size={9} /> Evidence Retrieval
                 </button>
                 <button onClick={() => llmConfigured && setUserMode("grounded")}
@@ -367,7 +367,7 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
           {answerMode === "offline" && (
             <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl mb-4" style={{ background: "rgba(217,119,6,0.06)", border: "1px solid rgba(217,119,6,0.15)" }}>
               <WifiOff size={12} color="#d97706" />
-              <span style={{ color: "#d97706", fontSize: "0.74rem" }}>Backend offline — start FastAPI for evidence retrieval.</span>
+              <span style={{ color: "#d97706", fontSize: "0.74rem" }}>Backend offline — start the backend server for evidence retrieval.</span>
             </div>
           )}
 
@@ -453,8 +453,8 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
                             {msg.groundedMeta.usage && <> · ~{msg.groundedMeta.usage.total_tokens} tokens</>}
                           </>
                         : msg.mode === "grounded"
-                          ? "No LLM called"
-                          : msg.mode === "retrieval" ? "Evidence retrieval — no LLM" : "Backend offline"}
+                          ? "Evidence only — no LLM used"
+                          : msg.mode === "retrieval" ? "Evidence retrieval" : "Backend offline"}
                     </div>
                   </div>
                 )}
@@ -553,7 +553,7 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
             <div className="flex items-center gap-1.5" style={{ color: "#0f172a", fontSize: "0.82rem", fontWeight: 700 }}>
               <Search size={13} color="#7c3aed" /> Search Evidence
             </div>
-            <div style={{ color: "#9ca3af", fontSize: "0.66rem", marginTop: 2 }}>Direct FTS5 keyword search</div>
+            <div style={{ color: "#9ca3af", fontSize: "0.66rem", marginTop: 2 }}>Direct keyword search over parsed content</div>
           </div>
           <div className="px-4 py-3">
             {topicScope !== "All Topics" && (

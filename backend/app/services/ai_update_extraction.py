@@ -251,7 +251,7 @@ def extract_candidates(
     if not isinstance(raw_candidates, list):
         raw_candidates = []
 
-    # Validate and store
+    # Validate, deduplicate, and store
     created = []
     skipped = 0
     conn = get_connection()
@@ -260,6 +260,15 @@ def extract_candidates(
         for raw_cand in raw_candidates:
             validated = _validate_candidate(raw_cand, chunk_lookup)
             if validated is None:
+                skipped += 1
+                continue
+
+            # Dedup: skip if a candidate with the same source_file + title already exists
+            dup = conn.execute(
+                "SELECT id FROM ai_update_candidates WHERE source_file = ? AND title = ? LIMIT 1",
+                (validated["source_file"], validated["title"]),
+            ).fetchone()
+            if dup:
                 skipped += 1
                 continue
 

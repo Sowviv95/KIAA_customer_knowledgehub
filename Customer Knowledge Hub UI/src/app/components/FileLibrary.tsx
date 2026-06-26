@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from "react";
-import { Filter, FolderOpen, WifiOff, Database as DbIcon, Zap, Eye, MessageSquare, MoreVertical, GitCompare } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Filter, FolderOpen, WifiOff, Zap, Eye, MessageSquare, MoreVertical, GitCompare, RefreshCw, Loader2, Check, FileText, AlertCircle, Settings as SettingsIcon } from "lucide-react";
 import { Page, NavContext, EvidenceItem, CustomerFile } from "../types";
 import { FileTypeBadge } from "./file-library/FileTypeBadge";
 import { SummaryStatusBadge } from "./file-library/SummaryStatusBadge";
 import { EmptyState } from "./ui/EmptyState";
 import { SearchInput } from "./ui/SearchInput";
 import { fileCategories, fileTypes } from "../data";
-import { getFiles, mapBackendFileToCustomerFile, parseFile } from "../api/filesApi";
+import { getFiles, mapBackendFileToCustomerFile, parseFile, scanAndParse, type ScanAndParseSummary } from "../api/filesApi";
+import { getDashboardStats } from "../api/dashboardApi";
 
 type FileWithBackendId = CustomerFile & { backendId?: number };
 
@@ -77,28 +78,51 @@ export function FileLibrary({ initialFilter, onNavigate, onOpenDrawer, onOpenAsk
   const [allFiles, setAllFiles] = useState<FileWithBackendId[]>([]);
   const [dataSource, setDataSource] = useState<DataSource>("loading");
   const [parsingId, setParsingId] = useState<number | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
+  // Scan & Parse state
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanAndParseSummary | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [lastIndexedAt, setLastIndexedAt] = useState<string | null>(null);
+
+  const loadFiles = useCallback(async () => {
+    try {
+      const backendFiles = await getFiles();
+      setAllFiles(backendFiles.map(mapBackendFileToCustomerFile));
+      setDataSource("backend");
+      // Fetch last indexed timestamp
       try {
-        const backendFiles = await getFiles();
-        if (cancelled) return;
-        if (backendFiles.length > 0) {
-          setAllFiles(backendFiles.map(mapBackendFileToCustomerFile));
-          setDataSource("backend");
-        } else {
-          setAllFiles([]);
-          setDataSource("backend");
-        }
-      } catch {
-        if (cancelled) return;
-        setAllFiles([]);
-        setDataSource("offline");
-      }
-    })();
-    return () => { cancelled = true; };
+        const stats = await getDashboardStats();
+        setLastIndexedAt(stats.last_indexed_at);
+      } catch { /* optional */ }
+    } catch {
+      setAllFiles([]);
+      setDataSource("offline");
+    }
   }, []);
+
+  useEffect(() => { loadFiles(); }, [loadFiles]);
+
+  // Compute status counts from loaded files
+  const parsedCount = allFiles.filter((f) => f.summaryStatus === "Done").length;
+  const pendingCount = allFiles.filter((f) => f.summaryStatus === "Pending").length;
+  const missingCount = allFiles.filter((f) => (f.summaryStatus as string) === "Missing").length;
+
+  const handleScanAndParse = async () => {
+    setScanning(true);
+    setScanResult(null);
+    setScanError(null);
+    try {
+      const result = await scanAndParse();
+      setScanResult(result);
+      await loadFiles();
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Scan & Parse failed");
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const filtered = allFiles.filter((f) => {
     const matchSearch = f.name.toLowerCase().includes(search.toLowerCase()) || f.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()));
@@ -114,23 +138,102 @@ export function FileLibrary({ initialFilter, onNavigate, onOpenDrawer, onOpenAsk
       <div className="px-7 py-2.5 flex items-center justify-between" style={{ background: "#ffffff", borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
         <div className="flex items-center gap-2.5">
           <p style={{ color: "#6b7280", fontSize: "0.82rem" }}>
-            {allFiles.length} customer files {dataSource === "backend" ? "indexed" : "loaded"} · LSEG Risk Intelligence
+            {allFiles.length} customer files indexed · LSEG Risk Intelligence
           </p>
           {dataSource === "offline" && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(220,38,38,0.06)", color: "#dc2626", fontSize: "0.66rem", fontWeight: 600, border: "1px solid rgba(220,38,38,0.18)" }}>
               <WifiOff size={9} /> Backend unavailable
             </span>
           )}
-          {dataSource === "backend" && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: "0.66rem", fontWeight: 600, border: "1px solid rgba(22,163,74,0.22)" }}>
-              <DbIcon size={9} /> From backend
-            </span>
+          {dataSource === "backend" && allFiles.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: "0.66rem", fontWeight: 600, border: "1px solid rgba(22,163,74,0.22)" }}>
+                <Check size={8} /> {parsedCount} parsed
+              </span>
+              {pendingCount > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.08)", color: "#d97706", fontSize: "0.66rem", fontWeight: 600, border: "1px solid rgba(217,119,6,0.22)" }}>
+                  <Zap size={8} /> {pendingCount} pending
+                </span>
+              )}
+              {missingCount > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(220,38,38,0.06)", color: "#dc2626", fontSize: "0.66rem", fontWeight: 600, border: "1px solid rgba(220,38,38,0.18)" }}>
+                  <AlertCircle size={8} /> {missingCount} missing
+                </span>
+              )}
+              {lastIndexedAt && (
+                <span style={{ color: "#9ca3af", fontSize: "0.62rem" }}>
+                  Last scanned: {lastIndexedAt.slice(0, 16).replace("T", " ")}
+                </span>
+              )}
+            </div>
           )}
         </div>
-        <button className="px-4 py-1.5 rounded-lg" style={{ background: "#16a34a", color: "#fff", fontSize: "0.78rem", fontWeight: 600 }}>
-          + Add Folder
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleScanAndParse}
+            disabled={scanning || dataSource !== "backend"}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg transition-colors"
+            style={{
+              background: dataSource === "backend" && !scanning ? "#16a34a" : "#9ca3af",
+              color: "#ffffff",
+              fontSize: "0.78rem",
+              fontWeight: 600,
+              opacity: dataSource === "backend" && !scanning ? 1 : 0.6,
+              cursor: dataSource === "backend" && !scanning ? "pointer" : "not-allowed",
+            }}
+            title="Scan configured folder and parse new files"
+          >
+            {scanning ? <Loader2 size={12} style={{ animation: "kh-spin 0.8s linear infinite" }} /> : <RefreshCw size={12} />}
+            {scanning ? "Scanning..." : "Scan & Parse"}
+          </button>
+          <button
+            className="px-4 py-1.5 rounded-lg"
+            style={{ background: "rgba(0,0,0,0.03)", color: "#9ca3af", fontSize: "0.78rem", fontWeight: 600, border: "1px solid rgba(0,0,0,0.08)", cursor: "default" }}
+            title="Configure folder path in Settings"
+            disabled
+            onClick={() => onNavigate("settings")}
+          >
+            <span className="flex items-center gap-1.5"><SettingsIcon size={12} /> Settings</span>
+          </button>
+        </div>
       </div>
+
+      {/* Scan & Parse result banner */}
+      {scanResult && (
+        <div className="px-7 py-2 flex items-center gap-2" style={{ background: "rgba(22,163,74,0.04)", borderBottom: "1px solid rgba(22,163,74,0.12)" }}>
+          <Check size={12} color="#16a34a" />
+          <span style={{ color: "#16a34a", fontSize: "0.74rem" }}>
+            Scan: {scanResult.scan.scanned} files ({scanResult.scan.new} new, {scanResult.scan.changed} changed).
+            {" "}Parse: {scanResult.parse.parsed} parsed ({scanResult.parse.chunks_created} chunks).
+            {scanResult.parse.failed > 0 && ` ${scanResult.parse.failed} failed.`}
+          </span>
+          {scanResult.parse.parsed > 0 && (
+            <button
+              onClick={() => { setScanResult(null); onNavigate("summaries", { summariesTab: "candidates" }); }}
+              className="flex items-center gap-1 px-3 py-1 rounded-lg shrink-0"
+              style={{ background: "#16a34a", color: "#fff", fontSize: "0.72rem", fontWeight: 600 }}
+            >
+              <Zap size={10} /> Generate Insights
+            </button>
+          )}
+          <button onClick={() => setScanResult(null)} style={{ color: "#9ca3af", marginLeft: "auto", fontSize: "0.66rem" }}>Dismiss</button>
+        </div>
+      )}
+      {scanError && (
+        <div className="px-7 py-2 flex items-center gap-2" style={{ background: "rgba(220,38,38,0.04)", borderBottom: "1px solid rgba(220,38,38,0.12)" }}>
+          <AlertCircle size={12} color="#dc2626" />
+          <span style={{ color: "#dc2626", fontSize: "0.74rem" }}>{scanError}</span>
+          <button onClick={() => setScanError(null)} style={{ color: "#9ca3af", marginLeft: "auto", fontSize: "0.66rem" }}>Dismiss</button>
+        </div>
+      )}
+      {/* Per-file parse error banner */}
+      {parseError && (
+        <div className="px-7 py-2 flex items-center gap-2" style={{ background: "rgba(220,38,38,0.04)", borderBottom: "1px solid rgba(220,38,38,0.12)" }}>
+          <AlertCircle size={12} color="#dc2626" />
+          <span style={{ color: "#dc2626", fontSize: "0.74rem" }}>{parseError}</span>
+          <button onClick={() => setParseError(null)} style={{ color: "#9ca3af", marginLeft: "auto", fontSize: "0.66rem" }}>Dismiss</button>
+        </div>
+      )}
 
       {/* FilterBar */}
       <div className="px-7 py-3 flex items-center gap-3" style={{ background: "#ffffff", borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
@@ -158,14 +261,14 @@ export function FileLibrary({ initialFilter, onNavigate, onOpenDrawer, onOpenAsk
           <EmptyState
             icon={<WifiOff size={32} />}
             title="Backend unavailable"
-            description="Start the FastAPI backend to view indexed files. Run: cd backend && uvicorn app.main:app --reload --port 8000"
+            description="Start the backend server to view indexed files."
           />
         )}
         {allFiles.length === 0 && dataSource === "backend" && (
           <EmptyState
             icon={<FolderOpen size={32} />}
             title="No files indexed yet"
-            description="Configure a local folder in Settings and click Scan Folder to index customer files."
+            description="Configure a local folder in Settings, then click Scan & Parse to index customer files."
           />
         )}
         {allFiles.length > 0 && filtered.length === 0 && (
@@ -212,10 +315,13 @@ export function FileLibrary({ initialFilter, onNavigate, onOpenDrawer, onOpenAsk
               const handleParseFile = async () => {
                 if (!file.backendId) return;
                 setParsingId(file.backendId);
+                setParseError(null);
                 try {
                   await parseFile(file.backendId);
-                  setAllFiles((prev) => prev.map((f) => f.backendId === file.backendId ? { ...f, summaryStatus: "Done", excerpt: "Parsed content available. Click Evidence to view extracted text." } : f));
-                } catch { /* error handled silently */ }
+                  setAllFiles((prev) => prev.map((f) => f.backendId === file.backendId ? { ...f, summaryStatus: "Done", excerpt: "Parsed — click Evidence to view content." } : f));
+                } catch (err) {
+                  setParseError(`Failed to parse ${file.name}: ${err instanceof Error ? err.message : "unknown error"}`);
+                }
                 setParsingId(null);
               };
 
@@ -313,6 +419,8 @@ export function FileLibrary({ initialFilter, onNavigate, onOpenDrawer, onOpenAsk
         </table>
         )}
       </div>
+
+      <style>{`@keyframes kh-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

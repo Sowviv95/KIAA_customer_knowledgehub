@@ -202,8 +202,8 @@ export function mapBackendFileToCustomerFile(record: BackendFileRecord): Custome
     tags: extractTags(record),
     customerRelevance: RELEVANCE_MAP[record.customer_relevance] || "Reference",
     excerpt: isParsed
-      ? `Parsed content available. Click Evidence to view extracted text.`
-      : `Indexed from ${record.file_path}. Content parsing not yet available.`,
+      ? "Parsed — click Evidence to view content."
+      : "File indexed — click Parse to extract searchable content.",
     topic: guessTopic(record),
     backendId: record.id,
   };
