@@ -1,10 +1,6 @@
 # Customer Knowledge Hub — Backend
 
-FastAPI backend for the Customer Knowledge Hub. Provides REST API endpoints for settings, files, alerts, search and LLM-grounded answers.
-
-## Status
-
-**Sprint 10A** — Backend includes file scanning, parsing, FTS5 search, and LLM provider foundation. Frontend Ask AI uses retrieval-only mode. LLM grounded answers available via backend test endpoint.
+FastAPI backend for the Customer Knowledge Hub. Provides REST API endpoints for file management, search, AI insight generation, requirements, follow-ups, timeline, topic configuration, and exports.
 
 ## Requirements
 
@@ -52,9 +48,7 @@ setx OPENAI_API_KEY "sk-..."
 export OPENAI_API_KEY="sk-..."
 ```
 
-After setting the key, restart the backend server.
-
-**Never commit real API keys.**
+After setting the key, restart the backend server. **Never commit real API keys.**
 
 To check whether the key is configured:
 ```
@@ -63,22 +57,76 @@ GET http://localhost:8000/llm/status
 
 ## Endpoints
 
+### Core
+
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health` | Health check |
 | GET | `/settings` | Get current settings |
 | PUT | `/settings` | Update settings |
+| GET | `/dashboard/stats` | Dashboard statistics |
+| GET | `/demo/readiness` | Demo readiness status |
+
+### Files & Parsing
+
+| Method | Path | Description |
+|--------|------|-------------|
 | POST | `/files/scan` | Scan configured folder |
 | GET | `/files` | List indexed files |
+| GET | `/files/summary` | File summaries with chunk counts |
 | GET | `/files/{id}` | Get single file |
 | POST | `/files/{id}/parse` | Parse single file into chunks |
 | POST | `/files/parse` | Parse all unparsed files |
 | GET | `/files/{id}/chunks` | Get chunks for a file |
-| GET | `/alerts` | List alerts |
-| PUT | `/alerts/{id}` | Update alert status |
+
+### Search & Ask AI
+
+| Method | Path | Description |
+|--------|------|-------------|
 | GET | `/search?q=...` | Full-text search over chunks |
 | GET | `/llm/status` | LLM provider status |
-| POST | `/llm/grounded-answer-test` | Test grounded answer (backend only) |
+| POST | `/llm/grounded-answer` | Search + LLM grounded answer |
+
+### AI Insight Candidates
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/ai/status` | AI extraction availability |
+| POST | `/ai/candidates/extract` | Extract insight candidates from evidence |
+| GET | `/ai/candidates` | List candidates (filterable) |
+| PATCH | `/ai/candidates/{id}/review` | Accept/reject candidate |
+| POST | `/ai/candidates/{id}/convert-to-requirement` | Convert to requirement |
+| POST | `/ai/candidates/{id}/convert-to-action` | Convert to follow-up |
+
+### Requirements & Follow-ups
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/requirements` | List requirements |
+| POST | `/requirements` | Create requirement |
+| PATCH | `/requirements/{id}` | Update requirement |
+| GET | `/actions` | List follow-up actions |
+| POST | `/actions` | Create action |
+| PATCH | `/actions/{id}` | Update action |
+
+### Alerts
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/alerts` | List alerts |
+| PUT | `/alerts/{id}` | Update alert status |
+
+### Topics & Timeline
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/topics` | List tracked topics |
+| POST | `/topics` | Create topic |
+| PATCH | `/topics/{id}` | Update topic |
+| DELETE | `/topics/{id}` | Delete topic |
+| GET | `/topics/summary` | Topic summary with counts |
+| GET | `/timeline/events` | Timeline events |
+| GET | `/change-log` | Change log events |
 
 ## API Documentation
 
@@ -88,15 +136,16 @@ FastAPI auto-generates interactive docs:
 
 ## Database
 
-SQLite database is stored at `../data/customer_knowledge_hub.db` (relative to `backend/`). The database and tables are created automatically on first startup.
+SQLite database is stored at `../data/customer_knowledge_hub.db` (relative to `backend/`). The database and tables are created automatically on first startup. Default tracked topics and settings are seeded on init.
 
-## What is NOT implemented yet
+## Tests
+
+```bash
+python -m pytest tests/ -v
+```
+
+## Not Implemented
 
 - Automatic file watcher (watchdog)
-- Embedding generation
-- Vector / semantic search
-- Summary generation
-- Customer update extraction
-- Requirement extraction
-- Frontend LLM answer integration (Ask AI uses retrieval-only mode)
+- Embedding generation / vector search
 - Chat history persistence

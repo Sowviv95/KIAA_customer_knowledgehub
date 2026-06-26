@@ -341,7 +341,10 @@ export function EvidenceDrawer({ item, onClose, onOpenAsk }: Props) {
                     setCreateText(""); setShowCreateAction(false);
                     setCreateSuccess("Follow-up created");
                     setTimeout(() => setCreateSuccess(undefined), 4000);
-                  } catch { /* keep form open */ }
+                  } catch {
+                    setCreateSuccess("Failed to create follow-up. Check backend connection.");
+                    setTimeout(() => setCreateSuccess(undefined), 4000);
+                  }
                   setCreateSaving(false);
                 }} disabled={createSaving || !createText.trim()} className="flex items-center gap-1 px-3 py-1.5 rounded-lg"
                   style={{ background: "#d97706", color: "#fff", fontSize: "0.74rem", fontWeight: 600, opacity: createSaving || !createText.trim() ? 0.5 : 1 }}>
@@ -377,7 +380,10 @@ export function EvidenceDrawer({ item, onClose, onOpenAsk }: Props) {
                     setCreateText(""); setShowCreateReq(false);
                     setCreateSuccess("Requirement created");
                     setTimeout(() => setCreateSuccess(undefined), 4000);
-                  } catch { /* keep form open */ }
+                  } catch {
+                    setCreateSuccess("Failed to create requirement. Check backend connection.");
+                    setTimeout(() => setCreateSuccess(undefined), 4000);
+                  }
                   setCreateSaving(false);
                 }} disabled={createSaving || !createText.trim()} className="flex items-center gap-1 px-3 py-1.5 rounded-lg"
                   style={{ background: "#7c3aed", color: "#fff", fontSize: "0.74rem", fontWeight: 600, opacity: createSaving || !createText.trim() ? 0.5 : 1 }}>

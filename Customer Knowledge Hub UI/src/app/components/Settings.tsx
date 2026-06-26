@@ -376,7 +376,7 @@ export function Settings() {
             <div>
               <div style={{ color: "#166534", fontSize: "0.78rem", fontWeight: 600 }}>Settings connected to backend</div>
               <div style={{ color: "#16a34a", fontSize: "0.74rem", marginTop: 2 }}>
-                Settings are saved to SQLite via the FastAPI backend. File scanning, LLM calls and embeddings are not yet connected — provider selections are saved as configuration only.
+                Settings are saved to the backend. Provider selections are saved as configuration. File scanning and LLM calls use the configured settings.
               </div>
             </div>
           </div>

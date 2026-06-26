@@ -187,10 +187,9 @@ export function FileLibrary({ initialFilter, onNavigate, onOpenDrawer, onOpenAsk
             {scanning ? "Scanning..." : "Scan & Parse"}
           </button>
           <button
-            className="px-4 py-1.5 rounded-lg"
-            style={{ background: "rgba(0,0,0,0.03)", color: "#9ca3af", fontSize: "0.78rem", fontWeight: 600, border: "1px solid rgba(0,0,0,0.08)", cursor: "default" }}
+            className="px-4 py-1.5 rounded-lg transition-colors"
+            style={{ background: "#f8fafc", color: "#374151", fontSize: "0.78rem", fontWeight: 600, border: "1px solid rgba(0,0,0,0.08)" }}
             title="Configure folder path in Settings"
-            disabled
             onClick={() => onNavigate("settings")}
           >
             <span className="flex items-center gap-1.5"><SettingsIcon size={12} /> Settings</span>
