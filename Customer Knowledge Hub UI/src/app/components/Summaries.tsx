@@ -553,7 +553,7 @@ function BackendTrackedTopicsView({ initialTopic, onOpenAsk, highlightedTopics }
   if (error) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <EmptyState icon={<AlertCircle size={28} />} title="Backend unavailable" description="Start the FastAPI backend to view tracked topics." />
+        <EmptyState icon={<AlertCircle size={28} />} title="Backend unavailable" description="Start the backend server to view tracked topics." />
       </div>
     );
   }
@@ -780,7 +780,7 @@ function BackendTimelineView({ onOpenDrawer, onOpenAsk, highlightedTopics }: { o
   if (error) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <EmptyState icon={<AlertCircle size={28} />} title="Timeline unavailable" description="Timeline is unavailable because the backend could not be reached." />
+        <EmptyState icon={<AlertCircle size={28} />} title="Backend unavailable" description="Start the backend server to view the timeline." />
       </div>
     );
   }
@@ -981,7 +981,7 @@ function BackendFileSummariesView({ onOpenDrawer, onOpenAsk }: { onOpenDrawer: (
   if (error) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <EmptyState icon={<AlertCircle size={28} />} title="Backend unavailable" description="Start the FastAPI backend to view file summaries." />
+        <EmptyState icon={<AlertCircle size={28} />} title="Backend unavailable" description="Start the backend server to view file summaries." />
       </div>
     );
   }
@@ -1127,6 +1127,10 @@ function BackendExecBrief({ onNavigate, onOpenAsk }: { onNavigate: (page: Page, 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [topics, setTopics] = useState<TopicSummaryItem[]>([]);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [reqs, setReqs] = useState<BackendRequirement[]>([]);
+  const [actions, setActions] = useState<BackendAction[]>([]);
+  const [insightCandidates, setInsightCandidates] = useState<AIUpdateCandidate[]>([]);
+  const [changeLog, setChangeLog] = useState<ChangeLogEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -1135,12 +1139,16 @@ function BackendExecBrief({ onNavigate, onOpenAsk }: { onNavigate: (page: Page, 
     if (isRefresh) setRefreshing(true); else setLoading(true);
     setError(false);
     try {
-      const [s, t, e] = await Promise.all([
+      const [s, t, e, r, a, c, cl] = await Promise.all([
         getDashboardStats(),
         getTopicSummary(),
         getTimelineEvents({ limit: 5 }),
+        getRequirements().catch(() => []),
+        getActions().catch(() => []),
+        listAICandidates().then((res) => res.candidates).catch(() => []),
+        listChangeLog({ limit: 30 }).catch(() => []),
       ]);
-      setStats(s); setTopics(t); setEvents(e);
+      setStats(s); setTopics(t); setEvents(e); setReqs(r); setActions(a); setInsightCandidates(c); setChangeLog(cl);
     } catch {
       if (!isRefresh) setError(true);
     } finally {
@@ -1163,7 +1171,7 @@ function BackendExecBrief({ onNavigate, onOpenAsk }: { onNavigate: (page: Page, 
   if (error || !stats) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <EmptyState icon={<AlertCircle size={28} />} title="Backend unavailable" description="Start the FastAPI backend to view the executive brief." />
+        <EmptyState icon={<AlertCircle size={28} />} title="Backend unavailable" description="Start the backend server to view the executive brief." />
       </div>
     );
   }
@@ -1172,15 +1180,24 @@ function BackendExecBrief({ onNavigate, onOpenAsk }: { onNavigate: (page: Page, 
   const missingFiles = stats.files_indexed - stats.files_parsed - stats.files_pending_parse;
   const hasIssues = stats.files_pending_parse > 0 || missingFiles > 0 || stats.open_alerts > 0;
 
+  // Derived data for new sections
+  const openReqs = reqs.filter((r) => ["Open", "Changed", "Assumption"].includes(r.status));
+  const confirmedReqs = reqs.filter((r) => r.status === "Confirmed");
+  const openActions = actions.filter((a) => ["Open", "In Progress", "Blocked"].includes(a.status));
+  const highPriorityActions = openActions.filter((a) => a.priority === "High");
+  const acceptedInsights = insightCandidates.filter((c) => c.status === "accepted" && !c.converted_to_type);
+  const openQuestions = insightCandidates.filter((c) => c.update_type === "open_question" && c.status !== "rejected");
+  const risks = insightCandidates.filter((c) => c.update_type === "risk" && c.status !== "rejected");
+
   return (
     <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
       {/* Header */}
       <div className="rounded-xl px-5 py-4" style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.06)" }}>
         <div className="flex items-center justify-between">
           <div>
-            <div style={{ color: "#0f172a", fontSize: "0.92rem", fontWeight: 700 }}>Operational Status Overview</div>
+            <div style={{ color: "#0f172a", fontSize: "0.92rem", fontWeight: 700 }}>Executive Brief</div>
             <div style={{ color: "#9ca3af", fontSize: "0.74rem", marginTop: 2 }}>
-              Deterministic summary from indexed files, alerts, actions, and requirements.
+              Based on {stats.files_parsed} parsed files and {stats.chunks_indexed} evidence chunks.
               {stats.last_indexed_at && <span> Last indexed: {stats.last_indexed_at.slice(0, 16).replace("T", " ")}</span>}
             </div>
           </div>
@@ -1206,6 +1223,151 @@ function BackendExecBrief({ onNavigate, onOpenAsk }: { onNavigate: (page: Page, 
         <BriefStatCard label="Open Alerts" value={stats.open_alerts} sub={`${stats.total_alerts} total`} color={stats.open_alerts > 0 ? "#dc2626" : "#16a34a"} bg={stats.open_alerts > 0 ? "rgba(220,38,38,0.04)" : "rgba(22,163,74,0.04)"} onClick={() => onNavigate("alerts", { alertsFilter: "new" })} />
         <BriefStatCard label="Open Follow-ups" value={stats.open_followups} sub={`${stats.open_actions} actions, ${stats.open_requirements} req`} color={stats.open_followups > 0 ? "#d97706" : "#16a34a"} bg={stats.open_followups > 0 ? "rgba(217,119,6,0.04)" : "rgba(22,163,74,0.04)"} onClick={() => onNavigate("summaries", { summariesTab: "followups" })} />
       </div>
+
+      {/* Key Requirements + Open Follow-ups row */}
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        {/* Key Requirements */}
+        <div className="rounded-xl overflow-hidden" style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.06)" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+            <div className="flex items-center gap-2">
+              <span style={{ color: "#0f172a", fontSize: "0.88rem", fontWeight: 700 }}>Key Requirements</span>
+              <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(139,92,246,0.08)", color: "#7c3aed", fontSize: "0.58rem", fontWeight: 600 }}>{reqs.length}</span>
+            </div>
+            <button onClick={() => onNavigate("summaries", { summariesTab: "requirements" })} className="flex items-center gap-1" style={{ color: "#16a34a", fontSize: "0.72rem" }}>
+              View all <ChevronDown size={10} style={{ transform: "rotate(-90deg)" }} />
+            </button>
+          </div>
+          {reqs.length === 0 ? (
+            <div className="px-5 py-4" style={{ color: "#9ca3af", fontSize: "0.78rem" }}>No requirements yet. Create them from evidence or convert accepted insights.</div>
+          ) : (
+            <div className="px-5 py-2">
+              {/* Status summary */}
+              <div className="flex items-center gap-3 py-2 mb-1" style={{ borderBottom: "1px solid rgba(0,0,0,0.04)" }}>
+                {confirmedReqs.length > 0 && <span style={{ color: "#16a34a", fontSize: "0.68rem", fontWeight: 600 }}>{confirmedReqs.length} confirmed</span>}
+                {openReqs.length > 0 && <span style={{ color: "#d97706", fontSize: "0.68rem", fontWeight: 600 }}>{openReqs.length} open</span>}
+                {reqs.filter((r) => r.status === "Changed").length > 0 && <span style={{ color: "#dc2626", fontSize: "0.68rem", fontWeight: 600 }}>{reqs.filter((r) => r.status === "Changed").length} changed</span>}
+              </div>
+              {/* Top items (open first, then confirmed) */}
+              {[...openReqs, ...confirmedReqs].slice(0, 4).map((r) => {
+                const ss = reqStatusStyle[r.status as ReqStatus] || reqStatusStyle.Open;
+                return (
+                  <div key={r.id} className="flex items-start gap-2 py-2" style={{ borderBottom: "1px solid rgba(0,0,0,0.03)" }}>
+                    <span className="px-1.5 py-0.5 rounded-full shrink-0 mt-0.5" style={{ background: ss.bg, color: ss.text, fontSize: "0.58rem", fontWeight: 600 }}>{r.status}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate" style={{ color: "#374151", fontSize: "0.76rem" }}>{r.text}</div>
+                      {r.source_file && <div style={{ color: "#16a34a", fontSize: "0.62rem", marginTop: 1 }}>{r.source_file}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Open Follow-ups */}
+        <div className="rounded-xl overflow-hidden" style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.06)" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+            <div className="flex items-center gap-2">
+              <span style={{ color: "#0f172a", fontSize: "0.88rem", fontWeight: 700 }}>Open Follow-ups</span>
+              {openActions.length > 0 && <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.08)", color: "#d97706", fontSize: "0.58rem", fontWeight: 600 }}>{openActions.length}</span>}
+            </div>
+            <button onClick={() => onNavigate("summaries", { summariesTab: "followups" })} className="flex items-center gap-1" style={{ color: "#16a34a", fontSize: "0.72rem" }}>
+              View all <ChevronDown size={10} style={{ transform: "rotate(-90deg)" }} />
+            </button>
+          </div>
+          {openActions.length === 0 ? (
+            <div className="px-5 py-4" style={{ color: "#9ca3af", fontSize: "0.78rem" }}>No open follow-ups. All actions are resolved.</div>
+          ) : (
+            <div className="px-5 py-2">
+              {highPriorityActions.length > 0 && (
+                <div className="flex items-center gap-1.5 py-2 mb-1" style={{ borderBottom: "1px solid rgba(0,0,0,0.04)" }}>
+                  <AlertCircle size={10} color="#dc2626" />
+                  <span style={{ color: "#dc2626", fontSize: "0.68rem", fontWeight: 600 }}>{highPriorityActions.length} high priority</span>
+                </div>
+              )}
+              {openActions.slice(0, 4).map((a) => {
+                const ps = priorityStyle[(["High","Medium","Low"].includes(a.priority) ? a.priority : "Medium") as Priority];
+                return (
+                  <div key={a.id} className="flex items-start gap-2 py-2" style={{ borderBottom: "1px solid rgba(0,0,0,0.03)" }}>
+                    <span className="px-1.5 py-0.5 rounded-full shrink-0 mt-0.5" style={{ background: ps.bg, color: ps.text, fontSize: "0.58rem", fontWeight: 600 }}>{a.priority}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate" style={{ color: "#374151", fontSize: "0.76rem" }}>{a.text}</div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span style={{ color: "#9ca3af", fontSize: "0.62rem" }}>{a.owner || "Unassigned"}</span>
+                        {a.source_file && <span style={{ color: "#16a34a", fontSize: "0.62rem" }}>{a.source_file}</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Open Questions & Risks + Accepted Insights row */}
+      {(openQuestions.length > 0 || risks.length > 0 || acceptedInsights.length > 0) && (
+        <div className="grid gap-4" style={{ gridTemplateColumns: (openQuestions.length > 0 || risks.length > 0) && acceptedInsights.length > 0 ? "1fr 1fr" : "1fr" }}>
+          {/* Open Questions & Risks */}
+          {(openQuestions.length > 0 || risks.length > 0) && (
+            <div className="rounded-xl overflow-hidden" style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.06)" }}>
+              <div className="px-5 py-3.5" style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+                <div className="flex items-center gap-2">
+                  <span style={{ color: "#0f172a", fontSize: "0.88rem", fontWeight: 700 }}>Open Questions & Risks</span>
+                  <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.08)", color: "#d97706", fontSize: "0.58rem", fontWeight: 600 }}>{openQuestions.length + risks.length}</span>
+                </div>
+              </div>
+              <div className="px-5 py-2">
+                {[...risks, ...openQuestions].slice(0, 4).map((c) => (
+                  <div key={c.id} className="py-2" style={{ borderBottom: "1px solid rgba(0,0,0,0.03)" }}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="px-1.5 py-0.5 rounded-full" style={{ background: c.update_type === "risk" ? "rgba(220,38,38,0.08)" : "rgba(217,119,6,0.08)", color: c.update_type === "risk" ? "#dc2626" : "#d97706", fontSize: "0.58rem", fontWeight: 600 }}>
+                        {c.update_type === "risk" ? "Risk" : "Open Question"}
+                      </span>
+                      {c.topic && <span style={{ color: "#6b7280", fontSize: "0.58rem" }}>{c.topic}</span>}
+                    </div>
+                    <div style={{ color: "#374151", fontSize: "0.76rem" }}>{c.title}</div>
+                    {c.evidence_quote && (
+                      <div className="mt-1 pl-2" style={{ borderLeft: "2px solid rgba(107,114,128,0.15)" }}>
+                        <p style={{ color: "#6b7280", fontSize: "0.66rem", fontStyle: "italic", lineHeight: 1.5 }}>
+                          {c.evidence_quote.length > 120 ? c.evidence_quote.slice(0, 120) + "..." : c.evidence_quote}
+                        </p>
+                      </div>
+                    )}
+                    <div style={{ color: "#16a34a", fontSize: "0.62rem", marginTop: 2 }}>{c.source_file}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Accepted Insights pending conversion */}
+          {acceptedInsights.length > 0 && (
+            <div className="rounded-xl overflow-hidden" style={{ background: "#ffffff", border: "1px solid rgba(22,163,74,0.12)" }}>
+              <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+                <div className="flex items-center gap-2">
+                  <span style={{ color: "#0f172a", fontSize: "0.88rem", fontWeight: 700 }}>Accepted Insights</span>
+                  <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: "0.58rem", fontWeight: 600 }}>{acceptedInsights.length} pending conversion</span>
+                </div>
+                <button onClick={() => onNavigate("summaries", { summariesTab: "candidates" })} className="flex items-center gap-1" style={{ color: "#16a34a", fontSize: "0.72rem" }}>
+                  Review <ChevronDown size={10} style={{ transform: "rotate(-90deg)" }} />
+                </button>
+              </div>
+              <div className="px-5 py-2">
+                {acceptedInsights.slice(0, 4).map((c) => (
+                  <div key={c.id} className="flex items-start gap-2 py-2" style={{ borderBottom: "1px solid rgba(0,0,0,0.03)" }}>
+                    <span className="px-1.5 py-0.5 rounded-full shrink-0 mt-0.5" style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: "0.58rem", fontWeight: 600 }}>Accepted</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate" style={{ color: "#374151", fontSize: "0.76rem" }}>{c.title}</div>
+                      <div style={{ color: "#16a34a", fontSize: "0.62rem", marginTop: 1 }}>{c.source_file}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
         {/* Active Topics */}
@@ -1322,9 +1484,69 @@ function BackendExecBrief({ onNavigate, onOpenAsk }: { onNavigate: (page: Page, 
         </div>
       </div>
 
+      {/* Recent Changes */}
+      {changeLog.length > 0 && (() => {
+        const changeCats: { key: string; label: string; color: string; bg: string; icon: React.ElementType; types: string[] }[] = [
+          { key: "extracted", label: "Insights generated", color: "#2563eb", bg: "rgba(59,130,246,0.08)", icon: Plus, types: ["candidate_extracted"] },
+          { key: "accepted", label: "Insights accepted", color: "#16a34a", bg: "rgba(22,163,74,0.08)", icon: Check, types: ["candidate_accepted"] },
+          { key: "converted", label: "Converted to records", color: "#7c3aed", bg: "rgba(139,92,246,0.08)", icon: CheckCircle, types: ["candidate_converted_to_requirement", "candidate_converted_to_action"] },
+          { key: "reqs", label: "Requirements updated", color: "#7c3aed", bg: "rgba(139,92,246,0.08)", icon: ClipboardList, types: ["requirement_created", "requirement_updated"] },
+          { key: "actions", label: "Follow-ups updated", color: "#d97706", bg: "rgba(217,119,6,0.08)", icon: AlertCircle, types: ["action_created", "action_updated"] },
+        ];
+        const catCounts = changeCats.map((cat) => ({
+          ...cat,
+          count: changeLog.filter((e) => cat.types.includes(e.event_type)).length,
+        })).filter((c) => c.count > 0);
+
+        return (
+          <div className="rounded-xl overflow-hidden" style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.06)" }}>
+            <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+              <div style={{ color: "#0f172a", fontSize: "0.88rem", fontWeight: 700 }}>Recent Changes</div>
+              <button onClick={() => onNavigate("summaries", { summariesTab: "timeline" })} className="flex items-center gap-1" style={{ color: "#16a34a", fontSize: "0.72rem" }}>
+                Full timeline <ChevronDown size={10} style={{ transform: "rotate(-90deg)" }} />
+              </button>
+            </div>
+            {/* Category summary chips */}
+            <div className="px-5 py-3 flex items-center gap-2 flex-wrap" style={{ borderBottom: "1px solid rgba(0,0,0,0.04)" }}>
+              {catCounts.map((cat) => {
+                const Icon = cat.icon;
+                return (
+                  <span key={cat.key} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full" style={{ background: cat.bg, color: cat.color, fontSize: "0.66rem", fontWeight: 600 }}>
+                    <Icon size={9} /> {cat.count} {cat.label.toLowerCase()}
+                  </span>
+                );
+              })}
+            </div>
+            {/* Recent event list */}
+            <div className="px-5 py-2">
+              {changeLog.slice(0, 8).map((ev) => {
+                const cfg = EVENT_TYPE_CONFIG[ev.event_type] || { label: ev.event_type, color: "#6b7280", bg: "rgba(0,0,0,0.04)", icon: FileText };
+                const Icon = cfg.icon;
+                return (
+                  <div key={ev.id} className="flex items-start gap-2.5 py-2" style={{ borderBottom: "1px solid rgba(0,0,0,0.03)" }}>
+                    <div className="rounded flex items-center justify-center shrink-0 mt-0.5" style={{ background: cfg.bg, width: 20, height: 20 }}>
+                      <Icon size={9} color={cfg.color} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate" style={{ color: "#374151", fontSize: "0.74rem" }}>{ev.title}</div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span style={{ color: cfg.color, fontSize: "0.58rem", fontWeight: 600 }}>{cfg.label}</span>
+                        {ev.source_file && <span style={{ color: "#16a34a", fontSize: "0.58rem" }}>{ev.source_file.length > 30 ? ev.source_file.slice(0, 30) + "..." : ev.source_file}</span>}
+                        {ev.topic && <span style={{ color: "#6b7280", fontSize: "0.58rem" }}>{ev.topic}</span>}
+                        <span style={{ color: "#9ca3af", fontSize: "0.58rem" }}>{ev.created_at.slice(0, 16).replace("T", " ")}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* CTA */}
       <div className="rounded-xl px-5 py-3 flex items-center justify-between" style={{ background: "rgba(22,163,74,0.03)", border: "1px solid rgba(22,163,74,0.10)" }}>
-        <span style={{ color: "#6b7280", fontSize: "0.74rem" }}>Use Ask AI or Candidate Updates for AI-powered insights grounded in parsed evidence.</span>
+        <span style={{ color: "#6b7280", fontSize: "0.74rem" }}>Use Ask AI or Insight Candidates for AI-powered insights grounded in parsed evidence.</span>
         <button onClick={() => onOpenAsk("executive brief")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg shrink-0"
           style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.10)", color: "#374151", fontSize: "0.74rem" }}>
           <MessageSquare size={11} /> Ask AI
@@ -1336,20 +1558,20 @@ function BackendExecBrief({ onNavigate, onOpenAsk }: { onNavigate: (page: Page, 
 
 // ─── AI Candidate Updates ─────────────────────────────────────────────────────
 
-const UPDATE_TYPE_STYLE: Record<string, { bg: string; text: string }> = {
-  requirement:   { bg: "rgba(139,92,246,0.08)", text: "#7c3aed" },
-  decision:      { bg: "rgba(22,163,74,0.08)",  text: "#16a34a" },
-  open_question: { bg: "rgba(217,119,6,0.08)",  text: "#d97706" },
-  action_item:   { bg: "rgba(220,38,38,0.08)",  text: "#dc2626" },
-  scope_change:  { bg: "rgba(59,130,246,0.08)", text: "#2563eb" },
-  risk:          { bg: "rgba(220,38,38,0.08)",  text: "#dc2626" },
-  clarification: { bg: "rgba(107,114,128,0.08)", text: "#4b5563" },
+const UPDATE_TYPE_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  requirement:   { bg: "rgba(139,92,246,0.08)", text: "#7c3aed", label: "Requirement" },
+  decision:      { bg: "rgba(22,163,74,0.08)",  text: "#16a34a", label: "Decision" },
+  open_question: { bg: "rgba(217,119,6,0.08)",  text: "#d97706", label: "Open Question" },
+  action_item:   { bg: "rgba(220,38,38,0.08)",  text: "#dc2626", label: "Action Item" },
+  scope_change:  { bg: "rgba(59,130,246,0.08)", text: "#2563eb", label: "Scope Change" },
+  risk:          { bg: "rgba(220,38,38,0.08)",  text: "#dc2626", label: "Risk" },
+  clarification: { bg: "rgba(107,114,128,0.08)", text: "#4b5563", label: "Clarification" },
 };
 
-const STATUS_BADGE_STYLE: Record<string, { bg: string; text: string }> = {
-  candidate: { bg: "rgba(217,119,6,0.08)", text: "#d97706" },
-  accepted:  { bg: "rgba(22,163,74,0.08)", text: "#16a34a" },
-  rejected:  { bg: "rgba(107,114,128,0.08)", text: "#9ca3af" },
+const STATUS_BADGE_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  candidate: { bg: "rgba(217,119,6,0.08)", text: "#d97706", label: "Pending" },
+  accepted:  { bg: "rgba(22,163,74,0.08)", text: "#16a34a", label: "Accepted" },
+  rejected:  { bg: "rgba(107,114,128,0.08)", text: "#9ca3af", label: "Rejected" },
 };
 
 // ─── Conversion Modal ─────────────────────────────────────────────────────────
@@ -1493,9 +1715,14 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
   const [loading, setLoading] = useState(true);
   const [extracting, setExtracting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [topicFilter, setTopicFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [lastResult, setLastResult] = useState<{ created: number; skipped: number; error?: string | null } | null>(null);
   const [convertModal, setConvertModal] = useState<{ candidate: AIUpdateCandidate; mode: ConvertMode } | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1529,11 +1756,13 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
     setExtracting(false);
   };
 
-  const handleReview = async (id: number, status: string) => {
+  const handleReview = async (id: number, status: string, reviewerAction?: string) => {
     try {
-      const updated = await reviewAICandidate(id, { status });
+      const updated = await reviewAICandidate(id, { status, reviewer_action: reviewerAction });
       setCandidates((prev) => prev.map((c) => c.id === id ? { ...c, ...updated } : c));
     } catch { /* silently fail */ }
+    setRejectingId(null);
+    setRejectReason("");
   };
 
   const handleConverted = (updated: AIUpdateCandidate) => {
@@ -1548,19 +1777,34 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="flex items-center gap-2" style={{ color: "#9ca3af", fontSize: "0.82rem" }}>
-          <Loader2 size={14} className="animate-spin" /> Loading candidate updates...
+          <Loader2 size={14} className="animate-spin" /> Loading insight candidates...
         </div>
       </div>
     );
   }
 
-  const filtered = statusFilter === "all"
-    ? candidates
-    : statusFilter === "converted"
-      ? candidates.filter((c) => !!c.converted_to_type)
-      : statusFilter === "accepted"
-        ? candidates.filter((c) => c.status === "accepted" && !c.converted_to_type)
-        : candidates.filter((c) => c.status === statusFilter);
+  // Compute unique values for filter dropdowns
+  const uniqueTypes = Array.from(new Set(candidates.map((c) => c.update_type))).sort();
+  const uniqueTopics = Array.from(new Set(candidates.map((c) => c.topic).filter(Boolean) as string[])).sort();
+  const uniqueSources = Array.from(new Set(candidates.map((c) => c.source_file))).sort();
+
+  // Apply all filters
+  const filtered = candidates.filter((c) => {
+    // Status filter
+    if (statusFilter === "converted" && !c.converted_to_type) return false;
+    if (statusFilter === "accepted" && (c.status !== "accepted" || !!c.converted_to_type)) return false;
+    if (statusFilter === "candidate" && c.status !== "candidate") return false;
+    if (statusFilter === "rejected" && c.status !== "rejected") return false;
+    // Type filter
+    if (typeFilter !== "all" && c.update_type !== typeFilter) return false;
+    // Topic filter
+    if (topicFilter !== "all" && (c.topic || "") !== topicFilter) return false;
+    // Source filter
+    if (sourceFilter !== "all" && c.source_file !== sourceFilter) return false;
+    return true;
+  });
+
+  const hasActiveFilters = statusFilter !== "all" || typeFilter !== "all" || topicFilter !== "all" || sourceFilter !== "all";
 
   return (
     <div className="flex-1 overflow-y-auto p-5">
@@ -1573,9 +1817,9 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <div style={{ color: "#0f172a", fontSize: "0.92rem", fontWeight: 700 }}>AI candidate updates</div>
+          <div style={{ color: "#0f172a", fontSize: "0.92rem", fontWeight: 700 }}>Insight Candidates</div>
           <div style={{ color: "#9ca3af", fontSize: "0.74rem", marginTop: 2 }}>
-            Review AI-suggested customer updates grounded in parsed evidence.
+            AI-suggested customer updates grounded in parsed evidence. Review, accept, and convert.
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1584,7 +1828,7 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg"
               style={{ background: "#16a34a", color: "#fff", fontSize: "0.78rem", fontWeight: 600, opacity: extracting ? 0.6 : 1 }}>
               {extracting ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-              {extracting ? "Extracting..." : "Extract candidates"}
+              {extracting ? "Generating..." : "Generate Insights"}
             </button>
           )}
         </div>
@@ -1608,7 +1852,9 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
           <span style={{ color: lastResult.error ? "#dc2626" : "#16a34a", fontSize: "0.78rem" }}>
             {lastResult.error
               ? lastResult.error
-              : `Extracted ${lastResult.created} candidate${lastResult.created !== 1 ? "s" : ""}${lastResult.skipped > 0 ? `, ${lastResult.skipped} skipped (ungrounded)` : ""}.`}
+              : lastResult.created > 0
+                ? `Generated ${lastResult.created} new insight${lastResult.created !== 1 ? "s" : ""} from parsed evidence.${lastResult.skipped > 0 ? ` ${lastResult.skipped} already captured or ungrounded.` : ""}`
+                : "No new insights found — all evidence has been captured or no grounded updates detected."}
           </span>
           <button onClick={() => setLastResult(null)} style={{ color: "#9ca3af" }}><X size={14} /></button>
         </div>
@@ -1626,21 +1872,21 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
       )}
 
       {/* Empty state */}
-      {aiStatus?.available && candidates.length === 0 && (
+      {aiStatus?.available && candidates.length === 0 && !lastResult && (
         <EmptyState
           icon={<FileText size={28} />}
-          title="No AI candidates extracted yet"
-          description="Run candidate extraction from parsed customer evidence."
+          title="No insight candidates yet"
+          description="Click Generate Insights to extract reviewable customer updates from parsed evidence."
         />
       )}
 
-      {/* Filter bar with counts */}
+      {/* Filter bar */}
       {candidates.length > 0 && (
         <div className="flex items-center gap-2 mb-4 flex-wrap">
-          <span style={{ color: "#6b7280", fontSize: "0.72rem", fontWeight: 600 }}>Status:</span>
+          {/* Status chips */}
           {[
             { key: "all", label: "All", count: candidates.length },
-            { key: "candidate", label: "Candidate", count: candidates.filter((c) => c.status === "candidate").length },
+            { key: "candidate", label: "Pending", count: candidates.filter((c) => c.status === "candidate").length },
             { key: "accepted", label: "Accepted", count: candidates.filter((c) => c.status === "accepted" && !c.converted_to_type).length },
             { key: "converted", label: "Converted", count: candidates.filter((c) => !!c.converted_to_type).length },
             { key: "rejected", label: "Rejected", count: candidates.filter((c) => c.status === "rejected").length },
@@ -1650,7 +1896,51 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
               {f.label} ({f.count})
             </button>
           ))}
+
+          {/* Type dropdown */}
+          {uniqueTypes.length > 1 && (
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
+              className="px-2.5 py-1 rounded-lg cursor-pointer"
+              style={{ background: typeFilter !== "all" ? "rgba(139,92,246,0.08)" : "#f8fafc", color: typeFilter !== "all" ? "#7c3aed" : "#6b7280", border: `1px solid ${typeFilter !== "all" ? "rgba(139,92,246,0.22)" : "rgba(0,0,0,0.08)"}`, fontSize: "0.72rem", fontWeight: typeFilter !== "all" ? 600 : 400, outline: "none" }}>
+              <option value="all">All types</option>
+              {uniqueTypes.map((t) => <option key={t} value={t}>{(UPDATE_TYPE_STYLE[t] || { label: t }).label}</option>)}
+            </select>
+          )}
+
+          {/* Topic dropdown */}
+          {uniqueTopics.length > 0 && (
+            <select value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)}
+              className="px-2.5 py-1 rounded-lg cursor-pointer"
+              style={{ background: topicFilter !== "all" ? "rgba(22,163,74,0.08)" : "#f8fafc", color: topicFilter !== "all" ? "#16a34a" : "#6b7280", border: `1px solid ${topicFilter !== "all" ? "rgba(22,163,74,0.22)" : "rgba(0,0,0,0.08)"}`, fontSize: "0.72rem", fontWeight: topicFilter !== "all" ? 600 : 400, outline: "none" }}>
+              <option value="all">All topics</option>
+              {uniqueTopics.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+
+          {/* Source file dropdown */}
+          {uniqueSources.length > 1 && (
+            <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}
+              className="px-2.5 py-1 rounded-lg cursor-pointer"
+              style={{ background: sourceFilter !== "all" ? "rgba(59,130,246,0.08)" : "#f8fafc", color: sourceFilter !== "all" ? "#2563eb" : "#6b7280", border: `1px solid ${sourceFilter !== "all" ? "rgba(59,130,246,0.22)" : "rgba(0,0,0,0.08)"}`, fontSize: "0.72rem", fontWeight: sourceFilter !== "all" ? 600 : 400, outline: "none", maxWidth: 200 }}>
+              <option value="all">All files</option>
+              {uniqueSources.map((s) => <option key={s} value={s}>{s.length > 40 ? s.slice(0, 40) + "..." : s}</option>)}
+            </select>
+          )}
+
+          {/* Count indicator */}
+          <span style={{ color: "#9ca3af", fontSize: "0.66rem", marginLeft: "auto" }}>
+            {hasActiveFilters ? `${filtered.length} of ${candidates.length}` : `${candidates.length} total`}
+          </span>
         </div>
+      )}
+
+      {/* Filtered empty state */}
+      {candidates.length > 0 && filtered.length === 0 && (
+        <EmptyState
+          icon={<Filter size={28} />}
+          title="No candidates match your filters"
+          description="Try adjusting the status, type, topic, or source file filter."
+        />
       )}
 
       {/* Candidate cards */}
@@ -1660,20 +1950,25 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
             const typeStyle = UPDATE_TYPE_STYLE[c.update_type] || UPDATE_TYPE_STYLE.clarification;
             const statStyle = STATUS_BADGE_STYLE[c.status] || STATUS_BADGE_STYLE.candidate;
             const isConverted = !!c.converted_to_type;
+            const isRejectOpen = rejectingId === c.id;
+            const isRecent = c.created_at && (Date.now() - new Date(c.created_at).getTime()) < 24 * 60 * 60 * 1000;
             return (
-              <div key={c.id} className="rounded-xl overflow-hidden" style={{ background: "#ffffff", border: `1px solid ${isConverted ? "rgba(22,163,74,0.15)" : "rgba(0,0,0,0.06)"}` }}>
+              <div key={c.id} className="rounded-xl overflow-hidden" style={{ background: "#ffffff", border: `1px solid ${isConverted ? "rgba(22,163,74,0.15)" : isRecent && c.status === "candidate" ? "rgba(59,130,246,0.2)" : "rgba(0,0,0,0.06)"}` }}>
                 <div className="px-5 py-3.5">
                   {/* Top row: badges */}
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className="px-2 py-0.5 rounded-full" style={{ background: typeStyle.bg, color: typeStyle.text, fontSize: "0.62rem", fontWeight: 600 }}>
-                      {c.update_type.replace(/_/g, " ")}
+                      {typeStyle.label}
                     </span>
                     <span className="px-2 py-0.5 rounded-full" style={{ background: statStyle.bg, color: statStyle.text, fontSize: "0.62rem", fontWeight: 600 }}>
-                      {c.status}
+                      {statStyle.label}
                     </span>
+                    {isRecent && c.status === "candidate" && (
+                      <span className="px-1.5 py-0.5 rounded-full" style={{ background: "rgba(59,130,246,0.10)", color: "#2563eb", fontSize: "0.58rem", fontWeight: 700 }}>New</span>
+                    )}
                     {isConverted && (
                       <span className="px-2 py-0.5 rounded-full flex items-center gap-1" style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: "0.62rem", fontWeight: 600 }}>
-                        <CheckCircle size={9} /> Converted to {c.converted_to_type}
+                        <CheckCircle size={9} /> Converted to {c.converted_to_type === "requirement" ? "Requirement" : "Follow-up"}
                       </span>
                     )}
                     {c.confidence != null && (
@@ -1704,6 +1999,14 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
                     </p>
                   </div>
 
+                  {/* Reject reason display */}
+                  {c.status === "rejected" && c.reviewer_action && (
+                    <div className="mt-2 flex items-start gap-1.5 px-3 py-1.5 rounded-lg" style={{ background: "rgba(107,114,128,0.04)", border: "1px solid rgba(0,0,0,0.04)" }}>
+                      <span style={{ color: "#9ca3af", fontSize: "0.62rem", fontWeight: 600, flexShrink: 0 }}>Reason:</span>
+                      <span style={{ color: "#6b7280", fontSize: "0.68rem" }}>{c.reviewer_action}</span>
+                    </div>
+                  )}
+
                   {/* Audit lifecycle line */}
                   <div className="mt-2.5 flex items-center gap-1.5" style={{ color: "#9ca3af", fontSize: "0.64rem" }}>
                     <Clock size={9} />
@@ -1719,60 +2022,84 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
                     <span>{c.created_at.slice(0, 10)}</span>
                   </div>
 
+                  {/* Inline reject reason input */}
+                  {isRejectOpen && (
+                    <div className="mt-2.5 flex items-center gap-2 p-2.5 rounded-lg" style={{ background: "rgba(220,38,38,0.03)", border: "1px solid rgba(220,38,38,0.12)" }}>
+                      <input
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        placeholder="Reason for rejecting (optional)..."
+                        className="flex-1 bg-transparent outline-none"
+                        style={{ fontSize: "0.76rem", color: "#374151" }}
+                        autoFocus
+                        onKeyDown={(e) => { if (e.key === "Enter") handleReview(c.id, "rejected", rejectReason.trim() || undefined); }}
+                      />
+                      <button onClick={() => handleReview(c.id, "rejected", rejectReason.trim() || undefined)}
+                        className="flex items-center gap-1 px-3 py-1 rounded-lg shrink-0"
+                        style={{ background: "#dc2626", color: "#fff", fontSize: "0.72rem", fontWeight: 600 }}>
+                        <X size={10} /> Reject
+                      </button>
+                      <button onClick={() => { setRejectingId(null); setRejectReason(""); }}
+                        style={{ color: "#9ca3af", fontSize: "0.72rem" }}>Cancel</button>
+                    </div>
+                  )}
+
                   {/* Actions row */}
-                  <div className="flex items-center justify-end mt-2.5 gap-1.5 flex-wrap">
-                    {/* candidate status: Accept / Reject */}
-                    {c.status === "candidate" && (
-                      <>
-                        <button onClick={() => handleReview(c.id, "accepted")}
+                  {!isRejectOpen && (
+                    <div className="flex items-center justify-end mt-2.5 gap-1.5 flex-wrap">
+                      {/* candidate status: Accept / Reject */}
+                      {c.status === "candidate" && (
+                        <>
+                          <button onClick={() => handleReview(c.id, "accepted")}
+                            className="flex items-center gap-1 px-3 py-1 rounded-lg"
+                            style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(22,163,74,0.22)" }}>
+                            <Check size={10} /> Accept
+                          </button>
+                          <button onClick={() => { setRejectingId(c.id); setRejectReason(""); }}
+                            className="flex items-center gap-1 px-3 py-1 rounded-lg"
+                            style={{ background: "rgba(220,38,38,0.06)", color: "#dc2626", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(220,38,38,0.15)" }}>
+                            <X size={10} /> Reject
+                          </button>
+                        </>
+                      )}
+                      {/* accepted + not converted: Convert buttons + reset */}
+                      {c.status === "accepted" && !isConverted && (
+                        <>
+                          <button onClick={() => setConvertModal({ candidate: c, mode: "requirement" })}
+                            className="flex items-center gap-1 px-3 py-1 rounded-lg"
+                            style={{ background: "rgba(139,92,246,0.08)", color: "#7c3aed", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(139,92,246,0.18)" }}>
+                            <ClipboardList size={10} /> Convert to Requirement
+                          </button>
+                          <button onClick={() => setConvertModal({ candidate: c, mode: "action" })}
+                            className="flex items-center gap-1 px-3 py-1 rounded-lg"
+                            style={{ background: "rgba(217,119,6,0.08)", color: "#d97706", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(217,119,6,0.18)" }}>
+                            <AlertCircle size={10} /> Convert to Follow-up
+                          </button>
+                          <button onClick={() => handleReview(c.id, "candidate")}
+                            className="flex items-center gap-1 px-3 py-1 rounded-lg"
+                            style={{ background: "rgba(217,119,6,0.06)", color: "#d97706", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(217,119,6,0.15)" }}>
+                            <RefreshCw size={10} /> Reset
+                          </button>
+                        </>
+                      )}
+                      {/* converted: View navigation */}
+                      {isConverted && (
+                        <button onClick={() => onNavigate("summaries", { summariesTab: c.converted_to_type === "requirement" ? "requirements" : "followups" })}
                           className="flex items-center gap-1 px-3 py-1 rounded-lg"
                           style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(22,163,74,0.22)" }}>
-                          <Check size={10} /> Accept
+                          <Eye size={10} /> {c.converted_to_type === "requirement" ? "View Requirement" : "View Follow-up"}
                         </button>
-                        <button onClick={() => handleReview(c.id, "rejected")}
-                          className="flex items-center gap-1 px-3 py-1 rounded-lg"
-                          style={{ background: "rgba(220,38,38,0.06)", color: "#dc2626", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(220,38,38,0.15)" }}>
-                          <X size={10} /> Reject
-                        </button>
-                      </>
-                    )}
-                    {/* accepted + not converted: Convert buttons + reset */}
-                    {c.status === "accepted" && !isConverted && (
-                      <>
-                        <button onClick={() => setConvertModal({ candidate: c, mode: "requirement" })}
-                          className="flex items-center gap-1 px-3 py-1 rounded-lg"
-                          style={{ background: "rgba(139,92,246,0.08)", color: "#7c3aed", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(139,92,246,0.18)" }}>
-                          <ClipboardList size={10} /> Convert to Requirement
-                        </button>
-                        <button onClick={() => setConvertModal({ candidate: c, mode: "action" })}
-                          className="flex items-center gap-1 px-3 py-1 rounded-lg"
-                          style={{ background: "rgba(217,119,6,0.08)", color: "#d97706", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(217,119,6,0.18)" }}>
-                          <AlertCircle size={10} /> Convert to Follow-up
-                        </button>
+                      )}
+                      {/* rejected: Reset only */}
+                      {c.status === "rejected" && (
                         <button onClick={() => handleReview(c.id, "candidate")}
                           className="flex items-center gap-1 px-3 py-1 rounded-lg"
                           style={{ background: "rgba(217,119,6,0.06)", color: "#d97706", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(217,119,6,0.15)" }}>
                           <RefreshCw size={10} /> Reset
                         </button>
-                      </>
-                    )}
-                    {/* converted: View navigation */}
-                    {isConverted && (
-                      <button onClick={() => onNavigate("summaries", { summariesTab: c.converted_to_type === "requirement" ? "requirements" : "followups" })}
-                        className="flex items-center gap-1 px-3 py-1 rounded-lg"
-                        style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(22,163,74,0.22)" }}>
-                        <Eye size={10} /> {c.converted_to_type === "requirement" ? "View Requirement" : "View Follow-up"}
-                      </button>
-                    )}
-                    {/* rejected: Reset only */}
-                    {c.status === "rejected" && (
-                      <button onClick={() => handleReview(c.id, "candidate")}
-                        className="flex items-center gap-1 px-3 py-1 rounded-lg"
-                        style={{ background: "rgba(217,119,6,0.06)", color: "#d97706", fontSize: "0.72rem", fontWeight: 600, border: "1px solid rgba(217,119,6,0.15)" }}>
-                        <RefreshCw size={10} /> Reset
-                      </button>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -1835,7 +2162,7 @@ export function Summaries({ initialTab, initialTopic, onOpenDrawer, onOpenAsk, o
     { id: "requirements", label: "Requirements", count: tabCounts.requirements },
     { id: "followups",    label: "Open Follow-ups", count: tabCounts.followups },
     { id: "files",        label: "File Summaries", count: tabCounts.files },
-    { id: "candidates",   label: "Candidate Updates", count: tabCounts.candidates },
+    { id: "candidates",   label: "Insight Candidates", count: tabCounts.candidates },
   ];
 
   return (

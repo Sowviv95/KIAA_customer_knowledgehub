@@ -5,7 +5,7 @@
 1. Backend running: `cd backend && uvicorn app.main:app --reload`
 2. Frontend running: `cd "Customer Knowledge Hub UI" && npm run dev`
 3. Scan folder configured in Settings with customer files
-4. Files scanned and parsed (Settings > Scan & Parse)
+4. Files scanned and parsed (Settings > Scan & Parse, or File Library > Scan & Parse)
 5. Optional: `OPENAI_API_KEY` environment variable set for AI features
 
 ## Demo Path
@@ -23,8 +23,11 @@ Open the Dashboard. Show:
 
 Navigate to File Library. Show:
 
+- Header shows parsed/pending/missing counts and last scan time
+- "Scan & Parse" button triggers folder scan and parsing directly from File Library
 - File list with status, classification, and last updated
 - Missing files are clearly marked
+- Per-file Parse button for pending files
 - Parse status (Done, Pending, Missing)
 
 ### 3. Evidence Drawer
@@ -40,29 +43,58 @@ Click any file or evidence link. Show:
 
 Navigate to Ask AI. Show:
 
-- Evidence Retrieval mode: searches parsed chunks via FTS5
-- Grounded Answer mode (requires LLM key): AI answers grounded in evidence only
-- Source citations with file names and snippets
+- Evidence Retrieval mode (default): keyword search across all parsed file chunks
+- Grounded Answer mode (requires LLM key): AI answers grounded in indexed evidence only
+- Topic scope selector filters results to a specific tracked topic
+- Source citations with file names and highlighted snippets
+- Search Evidence sidebar for direct keyword search independent of chat
 
-### 5. AI Candidate Extraction
+### 5. Summaries Overview
 
-Navigate to Summaries > Candidate Updates. Show:
+Navigate to Summaries. Show the Executive Brief tab:
 
-- Click "Extract candidates" to run AI extraction from parsed evidence
-- Each candidate shows: update type, title, description, confidence, topic
+- Evidence grounding statement: "Based on N parsed files and M evidence chunks"
+- KPI cards: files indexed, evidence chunks, open alerts, open follow-ups
+- Key Requirements section: status breakdown (confirmed/open/changed) with source files
+- Open Follow-ups section: priority-ordered actions with owner and source
+- Open Questions & Risks section: from accepted insight candidates with evidence quotes
+- Accepted Insights section: pending conversion items with link to review
+- Active tracked topics with file/alert/action counts
+- Recent activity timeline preview
+- Alert breakdown and data quality indicators
+- Recent Changes section: categorized summary of what happened (insights generated, accepted, converted, requirements/follow-ups updated) with timestamps and source files
+- All sections are deterministic — no AI-generated text, only actual data records
+
+Switch to Tracked Topics tab:
+
+- Topic cards with drill-down stats (files, alerts, open actions, open requirements)
+- Click a topic to expand and ask AI about it
+
+### 6. Insight Candidate Generation
+
+Navigate to Summaries > Insight Candidates (or click "Generate Insights" from the File Library scan result banner). Show:
+
+- Click "Generate Insights" to extract reviewable customer updates from parsed evidence
+- Duplicate candidates are automatically filtered out across runs
+- Each candidate shows: insight type, title, description, confidence, tracked topic
 - Every candidate has a source file and evidence quote (grounded)
 - LLM unavailable state is clean if key is not set
 
-### 6. Candidate Review
+### 7. Candidate Review
 
-On a candidate card:
+Filter and review candidates:
 
+- Filter by status (Pending / Accepted / Converted / Rejected), insight type, tracked topic, or source file
+- "New" badge on candidates generated in the last 24 hours
+- Status labels: Pending (new), Accepted, Rejected, Converted
+- Extraction result shows new vs already captured counts
 - Click "Accept" to mark as accepted for review
-- Click "Reject" to dismiss
+- Click "Reject" to dismiss — optional reason is recorded
+- Rejected candidates show the reason and can be reset
 - Accepting does NOT auto-create requirements or actions
 - This is the human-review guardrail
 
-### 7. Convert to Requirement or Follow-up
+### 8. Convert to Requirement or Follow-up
 
 On an accepted candidate:
 
@@ -74,7 +106,7 @@ On an accepted candidate:
 - Candidate card shows "Converted to Requirement" badge
 - Click "View Requirement" to navigate to the created record
 
-### 8. Requirements and Follow-ups
+### 9. Requirements and Follow-ups
 
 Navigate to Summaries > Requirements. Show:
 
@@ -88,7 +120,7 @@ Navigate to Summaries > Open Follow-ups. Show:
 - Source file and evidence excerpt shown
 - Mark as Done when completed
 
-### 9. Timeline
+### 10. Timeline
 
 Navigate to Summaries > Timeline. Show:
 
@@ -99,7 +131,7 @@ Navigate to Summaries > Timeline. Show:
 - Expandable source excerpts on cards
 - Evidence Drawer accessible from timeline events
 
-### 10. Source Lineage Story
+### 11. Source Lineage Story
 
 Explain the end-to-end lineage:
 
