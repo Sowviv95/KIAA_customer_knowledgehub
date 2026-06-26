@@ -179,6 +179,17 @@ python -m scripts.reset_demo_state --all
 
 Source files and parsed chunks are never deleted by the reset script.
 
+## Topic Configuration
+
+Open Settings and scroll to "Tracked Topics":
+
+- 11 default LSEG Risk Intelligence topics are pre-configured
+- Each topic has search expansion keywords (used by Ask AI scope)
+- Topics can be enabled/disabled — disabled topics hide from filters
+- New topics can be added without code changes
+- Topic changes reflect across Dashboard, Ask AI, and Summaries filters
+- Existing records are safe if a topic is renamed or disabled
+
 ## Demo Readiness Check
 
 Open Settings and scroll to "Demo Readiness" to verify:

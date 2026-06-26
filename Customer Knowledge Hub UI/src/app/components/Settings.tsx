@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Folder, Cpu, Database, Coins, Zap, Bell, RefreshCw, ChevronRight, Check, Plus, Trash2, Info, Circle, WifiOff, Loader2, FileText, ClipboardCheck } from "lucide-react";
+import { Folder, Cpu, Database, Coins, Zap, Bell, RefreshCw, ChevronRight, Check, Plus, Trash2, Info, Circle, WifiOff, Loader2, FileText, ClipboardCheck, Tag, X } from "lucide-react";
 import type { AlertRule } from "../types";
 import { initialAlertRules, modelProviders, embeddingProviders } from "../data";
 import { checkHealth } from "../api/client";
@@ -7,6 +7,7 @@ import { getSettings, updateSettings } from "../api/settingsApi";
 import { scanFiles, parseAllFiles, scanAndParse, type ScanSummary, type BulkParseSummary, type ScanAndParseSummary } from "../api/filesApi";
 import { getLLMStatus, type LLMStatus } from "../api/llmApi";
 import { apiGet } from "../api/client";
+import { getTrackedTopics, createTrackedTopic, updateTrackedTopic, type TrackedTopic } from "../api/topicsConfigApi";
 
 interface DemoReadiness {
   backend_healthy: boolean;
@@ -134,6 +135,11 @@ export function Settings() {
   const [llmStatus, setLlmStatus] = useState<LLMStatus | null>(null);
   const [demoReadiness, setDemoReadiness] = useState<DemoReadiness | null>(null);
 
+  // Topic configuration
+  const [topics, setTopics] = useState<TrackedTopic[]>([]);
+  const [newTopicName, setNewTopicName] = useState("");
+  const [addingTopic, setAddingTopic] = useState(false);
+
   const loadSettings = useCallback(async () => {
     try {
       const health = await checkHealth();
@@ -158,6 +164,12 @@ export function Settings() {
         const dr = await apiGet<DemoReadiness>("/demo/readiness");
         setDemoReadiness(dr);
       } catch { /* demo readiness is optional */ }
+
+      // Load tracked topics
+      try {
+        const t = await getTrackedTopics();
+        setTopics(t);
+      } catch { /* topics optional */ }
     } catch {
       setBackendStatus("offline");
     } finally {
@@ -569,6 +581,76 @@ export function Settings() {
             </div>
             <Toggle checked={autoSummary} onChange={setAutoSummary} />
           </div>
+        </Section>
+
+        {/* Tracked Topics */}
+        <Section title="Tracked Topics" icon={Tag}>
+          <div className="mb-1" style={{ color: "#9ca3af", fontSize: "0.66rem", marginBottom: 8 }}>Topics used for filtering, scoping, and classification across the app.</div>
+          {topics.length === 0 && backendStatus === "connected" && (
+            <div style={{ color: "#9ca3af", fontSize: "0.78rem", padding: "8px 0" }}>Loading topics...</div>
+          )}
+          <div className="mb-4">
+            {topics.map((topic) => (
+              <div key={topic.id} className="flex items-center gap-3 py-2.5" style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
+                <Toggle checked={topic.enabled} onChange={async (v) => {
+                  try {
+                    const updated = await updateTrackedTopic(topic.id, { enabled: v });
+                    setTopics((prev) => prev.map((t) => t.id === topic.id ? updated : t));
+                  } catch { /* keep UI state */ }
+                }} />
+                <div className="flex-1">
+                  <div style={{ color: topic.enabled ? "#1e293b" : "#9ca3af", fontSize: "0.82rem", fontWeight: 500 }}>{topic.name}</div>
+                  {topic.keywords && (
+                    <div style={{ color: "#9ca3af", fontSize: "0.66rem", marginTop: 1 }}>
+                      {JSON.parse(topic.keywords).slice(0, 4).join(", ")}{JSON.parse(topic.keywords).length > 4 ? "..." : ""}
+                    </div>
+                  )}
+                </div>
+                <span style={{ color: "#9ca3af", fontSize: "0.62rem" }}>#{topic.sort_order}</span>
+              </div>
+            ))}
+          </div>
+          {/* Add topic */}
+          {addingTopic ? (
+            <div className="flex items-center gap-2">
+              <input value={newTopicName} onChange={(e) => setNewTopicName(e.target.value)}
+                placeholder="New topic name..."
+                className="flex-1 px-3 py-1.5 rounded-lg"
+                style={{ border: "1px solid rgba(0,0,0,0.12)", fontSize: "0.8rem", outline: "none" }}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newTopicName.trim()) {
+                    (async () => {
+                      try {
+                        const created = await createTrackedTopic({ name: newTopicName.trim(), sort_order: topics.length + 1 });
+                        setTopics((prev) => [...prev, created]);
+                        setNewTopicName(""); setAddingTopic(false);
+                      } catch { /* keep form open */ }
+                    })();
+                  }
+                }}
+              />
+              <button onClick={async () => {
+                if (!newTopicName.trim()) return;
+                try {
+                  const created = await createTrackedTopic({ name: newTopicName.trim(), sort_order: topics.length + 1 });
+                  setTopics((prev) => [...prev, created]);
+                  setNewTopicName(""); setAddingTopic(false);
+                } catch { /* keep form open */ }
+              }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg"
+                style={{ background: "#16a34a", color: "#fff", fontSize: "0.78rem", fontWeight: 600 }}>
+                <Check size={12} /> Add
+              </button>
+              <button onClick={() => { setAddingTopic(false); setNewTopicName(""); }}
+                style={{ color: "#9ca3af", fontSize: "0.74rem" }}>Cancel</button>
+            </div>
+          ) : (
+            <button onClick={() => setAddingTopic(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg"
+              style={{ border: "1px solid rgba(0,0,0,0.08)", color: "#6b7280", fontSize: "0.78rem" }}>
+              <Plus size={13} /> Add Topic
+            </button>
+          )}
         </Section>
 
         {/* Alert Rules */}

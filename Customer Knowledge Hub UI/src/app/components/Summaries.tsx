@@ -16,6 +16,7 @@ import { listChangeLog, type ChangeLogEvent } from "../api/changeLogApi";
 import { getDashboardStats, type DashboardStats } from "../api/dashboardApi";
 import { apiGet } from "../api/client";
 import { downloadCsv, downloadMarkdown } from "../api/exportUtils";
+import { getTrackedTopics } from "../api/topicsConfigApi";
 import {
   getAIStatus, extractAICandidates, listAICandidates, reviewAICandidate,
   convertCandidateToRequirement, convertCandidateToAction,
@@ -69,7 +70,7 @@ const priorityStyle: Record<Priority, { bg: string; text: string }> = {
 // ─── Filter panel ─────────────────────────────────────────────────────────────
 
 const allSourceTypes: SourceType[] = ["Meeting", "Email", "Document", "Deck", "Schema", "Source List"];
-const allTopicNames = [
+const _FALLBACK_TOPIC_NAMES = [
   "Scope", "Source List", "Schema/API", "SLA", "Monitoring Cadence",
   "Alerts", "Reports", "Support Model", "Commercials", "Open Questions", "Meeting Notes",
 ];
@@ -84,7 +85,7 @@ interface Filters {
 
 const defaultFilters: Filters = { sourceTypes: allSourceTypes, customerOnly: false, includeDecks: true, topics: [], freshness: "all" };
 
-function FilterPanel({ filters, onChange }: { filters: Filters; onChange: (f: Filters) => void }) {
+function FilterPanel({ filters, onChange, topicNames }: { filters: Filters; onChange: (f: Filters) => void; topicNames: string[] }) {
   const toggleSrc = (t: SourceType) => {
     const next = filters.sourceTypes.includes(t) ? filters.sourceTypes.filter((s) => s !== t) : [...filters.sourceTypes, t];
     onChange({ ...filters, sourceTypes: next });
@@ -141,7 +142,7 @@ function FilterPanel({ filters, onChange }: { filters: Filters; onChange: (f: Fi
 
       <div>
         <div style={{ color: "#6b7280", fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 8 }}>Tracked Topic</div>
-        {allTopicNames.map((t) => {
+        {topicNames.map((t) => {
           const active = filters.topics.includes(t);
           return (
             <button key={t} onClick={() => toggleTopic(t)} className="w-full text-left px-2.5 py-1.5 rounded-lg mb-0.5 transition-colors"
@@ -2236,8 +2237,9 @@ export function Summaries({ initialTab, initialTopic, onOpenDrawer, onOpenAsk, o
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [showFilters, setShowFilters] = useState(true);
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
+  const [topicNames, setTopicNames] = useState<string[]>(_FALLBACK_TOPIC_NAMES);
 
-  // Fetch lightweight counts for tab badges
+  // Fetch lightweight counts for tab badges + load configured topics
   useEffect(() => {
     (async () => {
       try {
@@ -2245,6 +2247,10 @@ export function Summaries({ initialTab, initialTopic, onOpenDrawer, onOpenAsk, o
           getDashboardStats(),
           listAICandidates({ status: "candidate" }).catch(() => ({ candidates: [], total: 0 })),
         ]);
+        try {
+          const configured = await getTrackedTopics(true);
+          if (configured.length > 0) setTopicNames(configured.map((t) => t.name));
+        } catch { /* fallback */ }
         setTabCounts({
           requirements: (s as any).open_requirements ?? 0,
           followups: (s as any).open_followups ?? 0,
@@ -2314,7 +2320,7 @@ export function Summaries({ initialTab, initialTopic, onOpenDrawer, onOpenAsk, o
           {activeTab === "files"        && <BackendFileSummariesView onOpenDrawer={onOpenDrawer} onOpenAsk={onOpenAsk} />}
           {activeTab === "candidates"   && <CandidateUpdatesView onNavigate={onNavigate} />}
         </div>
-        {showFilters && <FilterPanel filters={filters} onChange={setFilters} />}
+        {showFilters && <FilterPanel filters={filters} onChange={setFilters} topicNames={topicNames} />}
       </div>
     </div>
   );

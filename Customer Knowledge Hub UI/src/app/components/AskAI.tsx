@@ -11,22 +11,18 @@ import { contextSuggestedQuestions } from "../data";
 import { searchChunks, scopedSearch, type SearchResultItem } from "../api/searchApi";
 import { checkHealth } from "../api/client";
 import { getLLMStatus, getGroundedAnswer, type GroundedSource, type GroundedUsage } from "../api/llmApi";
+import { getTrackedTopics } from "../api/topicsConfigApi";
 
 const FF = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
 
-type TopicScope =
-  | "All Topics" | "Scope" | "Source List" | "Schema/API" | "SLA"
-  | "Monitoring Cadence" | "Alerts" | "Reports" | "Support Model"
-  | "Commercials" | "Open Questions";
-
-const topicScopes: TopicScope[] = [
+const _FALLBACK_SCOPES = [
   "All Topics", "Scope", "Source List", "Schema/API", "SLA",
   "Monitoring Cadence", "Alerts", "Reports", "Support Model",
   "Commercials", "Open Questions",
 ];
 
 /** Deterministic keyword expansion per tracked topic — appended to FTS5 queries. */
-const topicKeywords: Record<TopicScope, string[]> = {
+const _FALLBACK_KEYWORDS: Record<string, string[]> = {
   "All Topics": [],
   "Scope": ["scope", "phase", "coverage", "entity", "ingestion", "Phase 1", "Phase 2"],
   "Source List": ["source list", "data source", "website", "URL", "monitoring", "coverage"],
@@ -41,19 +37,18 @@ const topicKeywords: Record<TopicScope, string[]> = {
 };
 
 /** Get topic keyword list for scoped search, excluding terms already in user query. */
-function getTopicExpansionTerms(topic: TopicScope, query: string): string[] {
+function getTopicExpansionTerms(topic: string, query: string, keywordsMap: Record<string, string[]>): string[] {
   if (topic === "All Topics") return [];
   const q = query.toLowerCase();
-  return topicKeywords[topic].filter((t) => !q.includes(t.toLowerCase()));
+  return (keywordsMap[topic] || []).filter((t) => !q.includes(t.toLowerCase()));
 }
 
 /** Build a single search_query string for grounded answer backend: user query + OR-joined topic terms. */
-function buildGroundedSearchQuery(query: string, topic: TopicScope, contextTerms?: string): string {
+function buildGroundedSearchQuery(query: string, topic: string, keywordsMap: Record<string, string[]>, contextTerms?: string): string {
   let sq = query;
   if (contextTerms) sq = `${sq} ${contextTerms}`;
-  const expansion = getTopicExpansionTerms(topic, sq);
+  const expansion = getTopicExpansionTerms(topic, sq, keywordsMap);
   if (expansion.length > 0) {
-    // Append topic terms as OR group for broader matching
     sq = `${sq} ${expansion.slice(0, 4).join(" OR ")}`;
   }
   return sq;
@@ -81,7 +76,9 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
     { role: "assistant", text: "Hello! I'm your Knowledge Hub assistant. Ask me about your indexed customer files — I'll search the parsed evidence and return relevant excerpts.\n\nTry a question from the suggestions below, or type your own." },
   ]);
   const [input, setInput] = useState("");
-  const [topicScope, setTopicScope] = useState<TopicScope>("All Topics");
+  const [topicScope, setTopicScope] = useState<string>("All Topics");
+  const [topicScopes, setTopicScopes] = useState<string[]>(_FALLBACK_SCOPES);
+  const [topicKeywords, setTopicKeywords] = useState<Record<string, string[]>>(_FALLBACK_KEYWORDS);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeContext, setActiveContext] = useState<string | undefined>(context);
@@ -92,18 +89,30 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
   const suggestedQuestions = rc.suggestedQuestions;
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Check backend availability + LLM status on mount
+  // Check backend availability + LLM status + load topics on mount
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         await checkHealth();
         if (!cancelled) setAnswerMode("retrieval");
-        // Also check LLM status
         try {
           const status = await getLLMStatus();
           if (!cancelled) setLlmConfigured(status.configured);
         } catch { /* LLM status check failed — leave as false */ }
+        // Load configured topics
+        try {
+          const configured = await getTrackedTopics(true);
+          if (!cancelled && configured.length > 0) {
+            const names = configured.map((t) => t.name);
+            setTopicScopes(["All Topics", ...names]);
+            const kw: Record<string, string[]> = { "All Topics": [] };
+            for (const t of configured) {
+              kw[t.name] = t.keywords ? JSON.parse(t.keywords) : [];
+            }
+            setTopicKeywords(kw);
+          }
+        } catch { /* fallback to hardcoded */ }
       } catch {
         if (!cancelled) setAnswerMode("offline");
       }
@@ -141,13 +150,13 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
           extraContext = contextTerms;
         }
       }
-      const topicTerms = getTopicExpansionTerms(topicScope, baseQ);
+      const topicTerms = getTopicExpansionTerms(topicScope, baseQ, topicKeywords);
       const isScoped = topicScope !== "All Topics" && topicTerms.length > 0;
 
       if (userMode === "grounded" && llmConfigured) {
         // Grounded Answer mode: search + LLM via backend
         // Send OR-expanded query so backend FTS5 has broader recall
-        const searchQ = buildGroundedSearchQuery(query, topicScope, extraContext || undefined);
+        const searchQ = buildGroundedSearchQuery(query, topicScope, topicKeywords, extraContext || undefined);
         try {
           const res = await getGroundedAnswer(query, searchQ, 5);
           if (!res.called_llm && res.evidence_count === 0) {
@@ -266,7 +275,7 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
     setSearchDone(false);
     try {
       const sq = searchQuery.trim();
-      const sidebarTopicTerms = sidebarUseScope ? getTopicExpansionTerms(topicScope, sq) : [];
+      const sidebarTopicTerms = sidebarUseScope ? getTopicExpansionTerms(topicScope, sq, topicKeywords) : [];
       const useScopedSearch = sidebarUseScope && topicScope !== "All Topics" && sidebarTopicTerms.length > 0;
       const sidebarResults = useScopedSearch
         ? await scopedSearch(sq, sidebarTopicTerms, 20)

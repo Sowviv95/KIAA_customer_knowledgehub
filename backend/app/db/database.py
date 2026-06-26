@@ -52,6 +52,12 @@ def init_db() -> None:
         # Migrate: create customer_change_log table if missing
         _migrate_change_log(conn)
 
+        # Migrate: add configurable columns to tracked_topics
+        _migrate_tracked_topics(conn)
+
+        # Seed default tracked topics if empty
+        _seed_tracked_topics(conn)
+
         # Backfill FTS index from existing chunks if needed
         _backfill_fts(conn)
     finally:
@@ -133,6 +139,49 @@ def _migrate_change_log(conn) -> None:
             CREATE INDEX IF NOT EXISTS idx_change_log_event_type ON customer_change_log(event_type);
             CREATE INDEX IF NOT EXISTS idx_change_log_created_at ON customer_change_log(created_at);
         """)
+
+
+_DEFAULT_TOPICS = [
+    ("Scope", 1, '["scope","phase","coverage","entity","ingestion","Phase 1","Phase 2"]'),
+    ("Source List", 2, '["source list","data source","website","URL","monitoring","coverage"]'),
+    ("Schema/API", 3, '["schema","API","swagger","endpoint","payload","field","validation","countryCode"]'),
+    ("SLA", 4, '["SLA","latency","uptime","response time","p99","cadence","timeliness"]'),
+    ("Monitoring Cadence", 5, '["monitoring","cadence","refresh","frequency","batch","delta","daily"]'),
+    ("Alerts", 6, '["alert","notification","webhook","email","threshold","trigger"]'),
+    ("Reports", 7, '["report","daily report","weekly report","coverage report","change log"]'),
+    ("Support Model", 8, '["support","incident","issue","resolution","outage","P1","P2","weekend"]'),
+    ("Commercials", 9, '["commercial","pricing","proposal","tier","discount","API call","volume"]'),
+    ("Open Questions", 10, '["question","clarification","open","pending","unresolved","TBC"]'),
+    ("Meeting Notes", 11, '["meeting","call","transcript","steerco","workshop","discovery"]'),
+]
+
+
+def _migrate_tracked_topics(conn) -> None:
+    """Add enabled, sort_order, keywords columns to tracked_topics if missing."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(tracked_topics)").fetchall()]
+    if "enabled" not in cols:
+        conn.execute("ALTER TABLE tracked_topics ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
+    if "sort_order" not in cols:
+        conn.execute("ALTER TABLE tracked_topics ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    if "keywords" not in cols:
+        conn.execute("ALTER TABLE tracked_topics ADD COLUMN keywords TEXT")
+        conn.commit()
+
+
+def _seed_tracked_topics(conn) -> None:
+    """Seed default tracked topics if the table is empty."""
+    count = conn.execute("SELECT COUNT(*) FROM tracked_topics").fetchone()[0]
+    if count > 0:
+        return
+    for name, order, keywords in _DEFAULT_TOPICS:
+        conn.execute(
+            "INSERT INTO tracked_topics (name, understanding, enabled, sort_order, keywords) "
+            "VALUES (?, '', 1, ?, ?)",
+            (name, order, keywords),
+        )
+    conn.commit()
 
 
 def _backfill_fts(conn) -> None:

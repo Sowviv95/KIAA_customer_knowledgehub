@@ -3,12 +3,26 @@
 from app.db.database import get_connection
 from app.services.file_inventory import classify_topic, EXTENSION_TO_CATEGORY
 
-# Canonical topic vocabulary
-CANONICAL_TOPICS = [
+# Hardcoded fallback — used only if tracked_topics table is empty
+_FALLBACK_TOPICS = [
     "Scope", "Source List", "Schema/API", "SLA", "Monitoring Cadence",
     "Alerts", "Reports", "Support Model", "Commercials", "Open Questions",
     "Meeting Notes",
 ]
+
+
+def get_canonical_topics() -> list[str]:
+    """Read enabled topics from tracked_topics table, fall back to hardcoded list."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT name FROM tracked_topics WHERE enabled = 1 ORDER BY sort_order, id"
+        ).fetchall()
+        if rows:
+            return [r["name"] for r in rows]
+        return list(_FALLBACK_TOPICS)
+    finally:
+        conn.close()
 
 # Category → default topic mapping (for files/alerts without explicit topic)
 _CATEGORY_TO_TOPIC: dict[str, str] = {
@@ -101,9 +115,10 @@ def get_topic_summary() -> list[dict]:
             _update_last(entry, row["updated_at"])
 
         # Build result list — include all canonical topics (even empty ones)
+        canonical = get_canonical_topics()
         result = []
         seen = set()
-        for t in CANONICAL_TOPICS:
+        for t in canonical:
             entry = topics.get(t) or _ensure(t)
             entry["total_items"] = (
                 entry["files_count"] + entry["alerts_count"]

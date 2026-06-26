@@ -9,6 +9,7 @@ import { trackedTopicLabels } from "../data";
 import { checkHealth } from "../api/client";
 import { getDashboardStats, type DashboardStats } from "../api/dashboardApi";
 import { getTopicSummary, type TopicSummaryItem } from "../api/topicsApi";
+import { getTrackedTopics } from "../api/topicsConfigApi";
 
 const FF = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
 
@@ -46,6 +47,7 @@ export function Dashboard({ onNavigate, onOpenAsk, onOpenDrawer, role }: Props) 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null); // null = checking
   const [topicCounts, setTopicCounts] = useState<Record<string, number>>({});
+  const [topicLabels, setTopicLabels] = useState<string[]>(trackedTopicLabels);
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -59,6 +61,10 @@ export function Dashboard({ onNavigate, onOpenAsk, onOpenDrawer, role }: Props) 
         for (const t of topics) counts[t.topic] = t.total_items;
         setTopicCounts(counts);
       } catch { /* topics optional */ }
+      try {
+        const configured = await getTrackedTopics(true);
+        if (configured.length > 0) setTopicLabels(configured.map((t) => t.name));
+      } catch { /* fallback to hardcoded */ }
     } catch {
       setBackendOnline(false);
     }
@@ -248,7 +254,7 @@ export function Dashboard({ onNavigate, onOpenAsk, onOpenDrawer, role }: Props) 
               </div>
             </div>
             <div className="px-5 py-4 flex flex-wrap gap-2">
-              {trackedTopicLabels.map((topic) => {
+              {topicLabels.map((topic) => {
                 const isHighlighted = rc.highlightedTopics.includes(topic);
                 return (
                   <TrackedTopicChip
