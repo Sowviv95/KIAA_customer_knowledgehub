@@ -15,6 +15,7 @@ import { getTimelineEvents, type TimelineEvent } from "../api/timelineApi";
 import { listChangeLog, type ChangeLogEvent } from "../api/changeLogApi";
 import { getDashboardStats, type DashboardStats } from "../api/dashboardApi";
 import { apiGet } from "../api/client";
+import { downloadCsv, downloadMarkdown } from "../api/exportUtils";
 import {
   getAIStatus, extractAICandidates, listAICandidates, reviewAICandidate,
   convertCandidateToRequirement, convertCandidateToAction,
@@ -238,6 +239,16 @@ function RequirementsView({ onOpenDrawer, onOpenAsk, highlightedTopics, filters 
           </button>
         ))}
         <span style={{ marginLeft: "auto", color: "#9ca3af", fontSize: "0.74rem" }}>{filtered.length} requirements</span>
+        {filtered.length > 0 && (
+          <button onClick={() => downloadCsv(
+            ["ID", "Requirement", "Status", "Topic", "Source Type", "Source File", "Evidence Excerpt", "Last Updated"],
+            filtered.map((r) => [r.id, r.text, r.status, r.topic, r.source, r.file, r.excerpt, r.updated]),
+            "requirements_export",
+          )} className="flex items-center gap-1 px-3 py-1 rounded-full"
+            style={{ background: "#f8fafc", color: "#6b7280", fontSize: "0.74rem", border: "1px solid rgba(0,0,0,0.08)" }}>
+            <Download size={11} /> Export
+          </button>
+        )}
         <button onClick={() => setShowCreate((v) => !v)} className="flex items-center gap-1 px-3 py-1 rounded-full"
           style={{ background: showCreate ? "rgba(22,163,74,0.12)" : "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: "0.74rem", fontWeight: 600, border: "1px solid rgba(22,163,74,0.22)" }}>
           <Plus size={12} /> Add
@@ -403,6 +414,15 @@ function FollowupsView({ onOpenDrawer, onOpenAsk }: { onOpenDrawer: (e: Evidence
         <span className="px-2.5 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.08)", color: "#d97706", fontSize: "0.74rem", fontWeight: 600 }}>
           {total} open
         </span>
+        {openActions.length > 0 && (
+          <button onClick={() => downloadCsv(
+            ["ID", "Text", "Owner", "Due Date", "Priority", "Status", "Source File", "Evidence Excerpt", "Created"],
+            openActions.map((a) => [a.id, a.text, a.owner, a.due_date, a.priority, a.status, a.source_file, a.excerpt, a.created_at]),
+            "followups_export",
+          )} className="flex items-center gap-1 px-3 py-1 rounded-full" style={{ marginLeft: "auto", background: "#f8fafc", color: "#6b7280", fontSize: "0.74rem", border: "1px solid rgba(0,0,0,0.08)" }}>
+            <Download size={11} /> Export
+          </button>
+        )}
       </div>
 
       {total === 0 && (
@@ -1189,6 +1209,78 @@ function BackendExecBrief({ onNavigate, onOpenAsk }: { onNavigate: (page: Page, 
   const openQuestions = insightCandidates.filter((c) => c.update_type === "open_question" && c.status !== "rejected");
   const risks = insightCandidates.filter((c) => c.update_type === "risk" && c.status !== "rejected");
 
+  const exportBriefMd = () => {
+    const lines: string[] = [];
+    lines.push("# Customer Knowledge Hub — Executive Brief");
+    lines.push("");
+    lines.push(`> Based on ${stats.files_parsed} parsed files and ${stats.chunks_indexed} evidence chunks.`);
+    if (stats.last_indexed_at) lines.push(`> Last indexed: ${stats.last_indexed_at.slice(0, 16).replace("T", " ")}`);
+    lines.push(`> Status: ${stats.status_label}`);
+    lines.push("");
+
+    lines.push("## Summary");
+    lines.push("");
+    lines.push(`- **Files indexed:** ${stats.files_indexed} (${stats.files_parsed} parsed)`);
+    lines.push(`- **Evidence chunks:** ${stats.chunks_indexed}`);
+    lines.push(`- **Open alerts:** ${stats.open_alerts} of ${stats.total_alerts} total`);
+    lines.push(`- **Open follow-ups:** ${stats.open_followups} (${stats.open_actions} actions, ${stats.open_requirements} requirements)`);
+    lines.push("");
+
+    if (reqs.length > 0) {
+      lines.push("## Key Requirements");
+      lines.push("");
+      lines.push(`${confirmedReqs.length} confirmed, ${openReqs.length} open.`);
+      lines.push("");
+      for (const r of reqs) {
+        lines.push(`- **[${r.status}]** ${r.text}${r.source_file ? ` _(${r.source_file})_` : ""}`);
+      }
+      lines.push("");
+    }
+
+    if (openActions.length > 0) {
+      lines.push("## Open Follow-ups");
+      lines.push("");
+      for (const a of openActions) {
+        lines.push(`- **[${a.priority}]** ${a.text}${a.owner ? ` — ${a.owner}` : ""}${a.source_file ? ` _(${a.source_file})_` : ""}`);
+      }
+      lines.push("");
+    }
+
+    if (openQuestions.length > 0 || risks.length > 0) {
+      lines.push("## Open Questions & Risks");
+      lines.push("");
+      for (const c of [...risks, ...openQuestions]) {
+        const label = c.update_type === "risk" ? "Risk" : "Open Question";
+        lines.push(`- **[${label}]** ${c.title}`);
+        if (c.evidence_quote) lines.push(`  > ${c.evidence_quote.slice(0, 200)}${c.evidence_quote.length > 200 ? "..." : ""}`);
+        if (c.source_file) lines.push(`  _Source: ${c.source_file}_`);
+        lines.push("");
+      }
+    }
+
+    if (activeTopics.length > 0) {
+      lines.push("## Active Topics");
+      lines.push("");
+      for (const t of activeTopics) {
+        lines.push(`- **${t.topic}** — ${t.total_items} items (${t.files_count} files, ${t.alerts_count} alerts, ${t.open_actions_count + t.open_requirements_count} open)`);
+      }
+      lines.push("");
+    }
+
+    if (changeLog.length > 0) {
+      lines.push("## Recent Changes");
+      lines.push("");
+      for (const ev of changeLog.slice(0, 10)) {
+        lines.push(`- ${ev.created_at.slice(0, 16).replace("T", " ")} — **${ev.title}**${ev.source_file ? ` _(${ev.source_file})_` : ""}`);
+      }
+      lines.push("");
+    }
+
+    lines.push("---");
+    lines.push("_Exported from Customer Knowledge Hub. All content is deterministic — sourced from indexed files and reviewed records._");
+    downloadMarkdown(lines.join("\n"), "executive_brief");
+  };
+
   return (
     <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
       {/* Header */}
@@ -1206,6 +1298,11 @@ function BackendExecBrief({ onNavigate, onOpenAsk }: { onNavigate: (page: Page, 
               style={{ background: hasIssues ? "rgba(217,119,6,0.08)" : "rgba(22,163,74,0.08)", color: hasIssues ? "#d97706" : "#16a34a", fontSize: "0.72rem", fontWeight: 600, border: `1px solid ${hasIssues ? "rgba(217,119,6,0.22)" : "rgba(22,163,74,0.22)"}` }}>
               {hasIssues ? <AlertCircle size={10} /> : <CheckCircle size={10} />} {stats.status_label}
             </span>
+            <button onClick={exportBriefMd}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg transition-colors"
+              style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.10)", color: "#374151", fontSize: "0.72rem" }}>
+              <Download size={11} /> Export
+            </button>
             <button onClick={() => fetchData(true)} disabled={refreshing}
               className="flex items-center gap-1.5 px-3 py-1 rounded-lg transition-colors"
               style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.10)", color: "#374151", fontSize: "0.72rem", opacity: refreshing ? 0.6 : 1 }}>
@@ -1823,6 +1920,16 @@ function CandidateUpdatesView({ onNavigate }: { onNavigate: (page: Page, ctx?: N
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {candidates.length > 0 && (
+            <button onClick={() => downloadCsv(
+              ["ID", "Type", "Title", "Description", "Topic", "Status", "Confidence", "Source File", "Evidence Quote", "Reviewer Action", "Converted To", "Created"],
+              candidates.map((c) => [c.id, c.update_type, c.title, c.description, c.topic, c.status, c.confidence != null ? Math.round(c.confidence * 100) + "%" : "", c.source_file, c.evidence_quote, c.reviewer_action, c.converted_to_type, c.created_at]),
+              "insight_candidates_export",
+            )} className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg"
+              style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.10)", color: "#374151", fontSize: "0.78rem" }}>
+              <Download size={12} /> Export CSV
+            </button>
+          )}
           {aiStatus?.available && (
             <button onClick={handleExtract} disabled={extracting}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg"
@@ -2185,12 +2292,6 @@ export function Summaries({ initialTab, initialTopic, onOpenDrawer, onOpenAsk, o
           })}
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.10)", color: "#374151", fontSize: "0.78rem" }}>
-            <RefreshCw size={12} /> Refresh
-          </button>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ background: "#16a34a", color: "#fff", fontSize: "0.78rem", fontWeight: 600 }}>
-            <Download size={12} /> Export
-          </button>
           <button onClick={() => setShowFilters((v) => !v)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg"
             style={{ background: showFilters ? "rgba(22,163,74,0.08)" : "#f8fafc", border: `1px solid ${showFilters ? "rgba(22,163,74,0.22)" : "rgba(0,0,0,0.10)"}`, color: showFilters ? "#16a34a" : "#374151", fontSize: "0.78rem", fontWeight: showFilters ? 600 : 400 }}>
             <SlidersHorizontal size={12} /> Filters

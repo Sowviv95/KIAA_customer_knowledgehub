@@ -142,6 +142,17 @@ Explain the end-to-end lineage:
 5. Every requirement/action traces back to source file and evidence quote
 6. Timeline shows the full decision history
 
+### 12. Export
+
+Show export capabilities from each Summaries tab:
+
+- Executive Brief: Export button downloads a Markdown summary with KPIs, requirements, follow-ups, open questions, topics, and recent changes
+- Requirements tab: Export button downloads CSV with all requirements, statuses, source files, and evidence
+- Open Follow-ups tab: Export button downloads CSV with actions, priorities, owners, and source evidence
+- Insight Candidates tab: Export CSV button downloads all candidates with types, confidence, evidence quotes, and review status
+- All exports include date-stamped filenames (e.g., requirements_export_20260626.csv)
+- Exports are frontend-only — no data leaves the local machine
+
 ### Key Guardrails to Highlight
 
 - AI suggestions are candidates only, never auto-applied
