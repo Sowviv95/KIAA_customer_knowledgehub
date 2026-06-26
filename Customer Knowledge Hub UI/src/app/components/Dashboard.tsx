@@ -90,7 +90,7 @@ export function Dashboard({ onNavigate, onOpenAsk, onOpenDrawer, role }: Props) 
         {backendOnline === false && (
           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl mb-3" style={{ background: "rgba(217,119,6,0.06)", border: "1px solid rgba(217,119,6,0.15)" }}>
             <WifiOff size={12} color="#d97706" />
-            <span style={{ color: "#d97706", fontSize: "0.74rem" }}>Backend offline — start FastAPI for live stats. Run: cd backend && uvicorn app.main:app --reload --port 8000</span>
+            <span style={{ color: "#d97706", fontSize: "0.74rem" }}>Backend offline — start the backend server for live stats.</span>
           </div>
         )}
 
@@ -216,7 +216,7 @@ export function Dashboard({ onNavigate, onOpenAsk, onOpenDrawer, role }: Props) 
               </button>
             </div>
             {stats && stats.latest_alerts.length > 0 ? stats.latest_alerts.map((a) => (
-              <div key={a.id} className="flex items-center gap-3 px-5 py-2.5 hover:bg-green-50 transition-colors cursor-pointer" style={{ borderBottom: "1px solid rgba(0,0,0,0.03)" }}
+              <div key={a.id} className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50 transition-colors cursor-pointer" style={{ borderBottom: "1px solid rgba(0,0,0,0.03)" }}
                 onClick={() => onNavigate("alerts")}>
                 <Bell size={12} color={a.severity === "High" ? "#dc2626" : a.severity === "Medium" ? "#d97706" : "#16a34a"} />
                 <div className="flex-1 min-w-0">

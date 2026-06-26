@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { TopNav } from "./components/TopNav";
 import { Dashboard } from "./components/Dashboard";
 import { FileLibrary } from "./components/FileLibrary";
@@ -12,6 +12,7 @@ import { StateShowcase } from "./components/StateShowcase";
 import { DesignTokensView } from "./components/DesignTokensView";
 import { Page, NavContext, EvidenceItem, Role } from "./types";
 import { color } from "./tokens";
+import { getDashboardStats } from "./api/dashboardApi";
 
 export default function App() {
   const [activePage, setActivePage]   = useState<Page>("dashboard");
@@ -21,6 +22,20 @@ export default function App() {
   const [showDevNotes, setShowDevNotes] = useState(false);
   const [showStates, setShowStates]   = useState(false);
   const [showTokens, setShowTokens]   = useState(false);
+  const [alertCount, setAlertCount]   = useState(0);
+
+  const fetchAlertCount = useCallback(async () => {
+    try {
+      const stats = await getDashboardStats();
+      setAlertCount(stats.open_alerts);
+    } catch { /* backend offline — show 0 */ }
+  }, []);
+
+  useEffect(() => {
+    fetchAlertCount();
+    const interval = setInterval(fetchAlertCount, 60_000);
+    return () => clearInterval(interval);
+  }, [fetchAlertCount]);
 
   const clearDevOverlays = () => { setShowStates(false); setShowTokens(false); };
 
@@ -63,7 +78,7 @@ export default function App() {
       <TopNav
         activePage={activePage}
         onNavigate={(p) => navigateTo(p)}
-        alertCount={3}
+        alertCount={alertCount}
         role={role}
         onRoleChange={setRole}
         showDevNotes={showDevNotes}

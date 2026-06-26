@@ -145,7 +145,9 @@ export function Alerts({ initialFilter, onOpenDrawer, onOpenAsk, role = "All Vie
         </div>
         <button
           className="px-4 py-1.5 rounded-lg"
-          style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.10)", color: "#374151", fontSize: "0.78rem" }}
+          style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.10)", color: "#9ca3af", fontSize: "0.78rem", cursor: "default" }}
+          title="Rule configuration coming soon"
+          disabled
         >
           Configure Rules
         </button>

@@ -230,7 +230,7 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
           setAnswerMode("offline");
           setMessages((prev) => [...prev, {
             role: "assistant",
-            text: "The backend is currently unavailable. Start the FastAPI server to search indexed files and get evidence-based answers.\n\nRun: `cd backend && uvicorn app.main:app --reload --port 8000`",
+            text: "The backend is currently unavailable. Start the backend server to search indexed files and get evidence-based answers.",
             mode: "offline",
           }]);
         }
@@ -239,7 +239,7 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
       await new Promise((r) => setTimeout(r, 400));
       setMessages((prev) => [...prev, {
         role: "assistant",
-        text: "The backend is not connected. I need the FastAPI backend running to search your indexed files.\n\nStart it with: `cd backend && uvicorn app.main:app --reload --port 8000`",
+        text: "The backend is not connected. Start the backend server to search your indexed files and get evidence-based answers.",
         mode: "offline",
       }]);
     }

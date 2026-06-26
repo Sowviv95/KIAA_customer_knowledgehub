@@ -99,7 +99,7 @@ function RoleViewDropdown({ role, onChange }: { role: Role; onChange: (r: Role) 
         >
           <div className="px-3 py-2.5" style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
             <div style={{ color: "#9ca3af", fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-              Role Lens — no login required
+              Select Role
             </div>
           </div>
           {roles.map((r) => {
@@ -134,7 +134,7 @@ function RoleViewDropdown({ role, onChange }: { role: Role; onChange: (r: Role) 
 }
 
 export function TopNav({
-  activePage, onNavigate, alertCount = 3,
+  activePage, onNavigate, alertCount = 0,
   role, onRoleChange,
 }: TopNavProps) {
   return (

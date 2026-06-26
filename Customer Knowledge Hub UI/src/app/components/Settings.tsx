@@ -351,7 +351,7 @@ export function Settings() {
             <div>
               <div style={{ color: "#991b1b", fontSize: "0.78rem", fontWeight: 600 }}>Backend not available</div>
               <div style={{ color: "#dc2626", fontSize: "0.74rem", marginTop: 2 }}>
-                Start the FastAPI backend on port 8000 to save settings. Run: <code style={{ background: "rgba(0,0,0,0.06)", padding: "1px 4px", borderRadius: 3 }}>cd backend && uvicorn app.main:app --reload --port 8000</code>
+                Start the backend server on port 8000 to save settings and manage files.
               </div>
             </div>
           </div>
@@ -469,8 +469,9 @@ export function Settings() {
               </div>
               <button
                 className="flex items-center gap-1 px-3 py-2.5 rounded-lg"
-                style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: "0.78rem", fontWeight: 600, border: "1px solid rgba(22,163,74,0.22)", whiteSpace: "nowrap" }}
-                title="Browse is not available yet — enter path manually"
+                style={{ background: "rgba(0,0,0,0.03)", color: "#9ca3af", fontSize: "0.78rem", fontWeight: 600, border: "1px solid rgba(0,0,0,0.08)", whiteSpace: "nowrap", cursor: "default" }}
+                title="Enter path manually — folder picker coming soon"
+                disabled
               >
                 Browse <ChevronRight size={12} />
               </button>
@@ -564,7 +565,7 @@ export function Settings() {
           <div className="flex items-center justify-between">
             <div>
               <div style={{ color: "#1e293b", fontSize: "0.82rem", fontWeight: 600 }}>Automatically summarise new files</div>
-              <div style={{ color: "#9ca3af", fontSize: "0.74rem", marginTop: 3 }}>When a new file is detected, trigger summarisation immediately. <span style={{ color: "#d97706" }}>(Local setting — not yet saved to backend)</span></div>
+              <div style={{ color: "#9ca3af", fontSize: "0.74rem", marginTop: 3 }}>When a new file is detected, trigger summarisation immediately.</div>
             </div>
             <Toggle checked={autoSummary} onChange={setAutoSummary} />
           </div>
@@ -572,7 +573,7 @@ export function Settings() {
 
         {/* Alert Rules */}
         <Section title="Alert Rules" icon={Bell}>
-          <div className="mb-1" style={{ color: "#9ca3af", fontSize: "0.66rem", marginBottom: 8 }}>Local settings — alert rule persistence coming in a future sprint.</div>
+          <div className="mb-1" style={{ color: "#9ca3af", fontSize: "0.66rem", marginBottom: 8 }}>Configure which signals trigger alerts when files are scanned.</div>
           <div className="mb-4">
             {alertRules.map((rule) => (
               <div key={rule.id} className="flex items-center gap-4 py-3" style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
