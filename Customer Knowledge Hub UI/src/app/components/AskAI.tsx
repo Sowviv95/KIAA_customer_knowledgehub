@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, ChevronDown, Sparkles, BookOpen, Lightbulb, Search, Eye, WifiOff, FileText, Database as DbIcon, Zap, AlertTriangle } from "lucide-react";
+import { Send, ChevronDown, ChevronRight, Sparkles, BookOpen, Lightbulb, Search, Eye, WifiOff, FileText, Database as DbIcon, Zap, AlertTriangle } from "lucide-react";
 import { Role, AskAIMessage, EvidenceItem } from "../types";
 import { roleConfig } from "../roleConfig";
 import { ContextPill } from "./ui/ContextPill";
@@ -14,6 +14,32 @@ import { getLLMStatus, getGroundedAnswer, type GroundedSource, type GroundedUsag
 import { getTrackedTopics } from "../api/topicsConfigApi";
 
 const FF = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
+
+/** Collapsible wrapper for grounded answer source cards. */
+function CollapsibleSources({ children, count, fileNames }: { children: React.ReactNode; count: number; fileNames: string[] }) {
+  const [open, setOpen] = useState(false);
+  const preview = fileNames.slice(0, 3).join(", ") + (fileNames.length > 3 ? `, +${fileNames.length - 3} more` : "");
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 w-full px-3 py-2 rounded-lg transition-colors"
+        style={{ background: "rgba(234,88,12,0.04)", border: "1px solid rgba(234,88,12,0.12)", cursor: "pointer" }}
+      >
+        {open ? <ChevronDown size={12} color="#ea580c" /> : <ChevronRight size={12} color="#ea580c" />}
+        <span style={{ color: "#ea580c", fontSize: "0.74rem", fontWeight: 600 }}>
+          Sources used ({count})
+        </span>
+        {!open && preview && (
+          <span style={{ color: "#9ca3af", fontSize: "0.68rem", marginLeft: 4 }}>
+            · {preview}
+          </span>
+        )}
+      </button>
+      {open && <div className="mt-2 flex flex-col gap-2">{children}</div>}
+    </div>
+  );
+}
 
 const _FALLBACK_SCOPES = [
   "All Topics", "Scope", "Source List", "Schema/API", "SLA",
@@ -98,7 +124,10 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
         if (!cancelled) setAnswerMode("retrieval");
         try {
           const status = await getLLMStatus();
-          if (!cancelled) setLlmConfigured(status.configured);
+          if (!cancelled) {
+            setLlmConfigured(status.configured);
+            if (status.configured) setUserMode("grounded");
+          }
         } catch { /* LLM status check failed — leave as false */ }
         // Load configured topics
         try {
@@ -420,9 +449,12 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
                     ))}
                   </div>
                 )}
-                {/* Grounded answer source cards */}
+                {/* Grounded answer source cards — collapsed by default */}
                 {msg.groundedSources && msg.groundedSources.length > 0 && (
-                  <div className="mt-2 flex flex-col gap-2">
+                  <CollapsibleSources
+                    count={msg.groundedSources.length}
+                    fileNames={[...new Set(msg.groundedSources.map((s) => s.file_name))]}
+                  >
                     {msg.groundedSources.map((src) => (
                       <EvidenceResultCard
                         key={src.chunk_id}
@@ -442,7 +474,7 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
                         compact
                       />
                     ))}
-                  </div>
+                  </CollapsibleSources>
                 )}
                 {/* Mode label + confidence + usage for assistant messages */}
                 {msg.role === "assistant" && msg.mode && (
@@ -450,17 +482,17 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
                     {/* Confidence label */}
                     {msg.mode === "grounded" && msg.groundedMeta?.calledLlm && (
                       <span className="inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-full" style={{ background: "rgba(234,88,12,0.08)", color: "#ea580c", fontSize: "0.62rem", fontWeight: 600, border: "1px solid rgba(234,88,12,0.15)" }}>
-                        Grounded — evidence found
+                        Grounded Answer — LLM used with local evidence
                       </span>
                     )}
                     {msg.mode === "grounded" && !msg.groundedMeta?.calledLlm && msg.groundedMeta?.evidenceCount === 0 && (
                       <span className="inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-full" style={{ background: "rgba(107,114,128,0.08)", color: "#6b7280", fontSize: "0.62rem", fontWeight: 600, border: "1px solid rgba(107,114,128,0.15)" }}>
-                        Not found in indexed files
+                        No matching evidence found — try different keywords
                       </span>
                     )}
                     {msg.mode === "grounded" && !msg.groundedMeta?.calledLlm && (msg.groundedMeta?.evidenceCount ?? 0) > 0 && (
                       <span className="inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.08)", color: "#d97706", fontSize: "0.62rem", fontWeight: 600, border: "1px solid rgba(217,119,6,0.15)" }}>
-                        Retrieval fallback
+                        LLM answer failed — showing evidence retrieval fallback
                       </span>
                     )}
                     {/* Usage details */}
@@ -471,7 +503,7 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
                             {msg.groundedMeta.usage && <> · ~{msg.groundedMeta.usage.total_tokens} tokens</>}
                           </>
                         : msg.mode === "grounded"
-                          ? "Evidence only — no LLM used"
+                          ? "Grounded mode — no evidence matched this query"
                           : msg.mode === "retrieval" ? "Evidence retrieval" : "Backend offline"}
                     </div>
                   </div>
