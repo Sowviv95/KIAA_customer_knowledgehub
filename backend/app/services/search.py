@@ -10,16 +10,20 @@ def sanitise_fts_query(query: str) -> str:
 
     - Strips FTS5 operators and special characters that cause syntax errors.
     - Keeps alphanumeric words, hyphens within words, and spaces.
+    - Preserves FTS5 OR operator when used intentionally (e.g. scoped search).
     - Returns empty string if nothing useful remains.
     """
     # Remove FTS5 column filters like "content:" or "file_name:"
     q = re.sub(r'\b\w+\s*:', ' ', query)
-    # Remove special chars that break FTS5: quotes, parens, braces, asterisks, carets
-    q = re.sub(r'["\'\(\)\{\}\[\]\*\^~]', ' ', q)
-    # Collapse slashes to spaces (e.g. "Schema/API" → "Schema API")
-    q = q.replace('/', ' ')
+    # Keep only word characters, whitespace, and hyphens
+    q = re.sub(r'[^\w\s-]', ' ', q)
+    # Remove standalone hyphens (FTS5 NOT operator) but keep hyphenated words
+    q = re.sub(r'(?<!\w)-|-(?!\w)', ' ', q)
     # Collapse whitespace
     q = re.sub(r'\s+', ' ', q).strip()
+    # Remove FTS5 reserved words if they appear as the entire (single-word) query
+    if q.upper() in ('AND', 'OR', 'NOT', 'NEAR'):
+        return ''
     return q
 
 

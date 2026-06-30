@@ -235,13 +235,22 @@ export function AskAI({ context, role = "All Views", onOpenDrawer }: Props) {
               mode: "retrieval",
             }]);
           }
-        } catch {
-          setAnswerMode("offline");
-          setMessages((prev) => [...prev, {
-            role: "assistant",
-            text: "The backend is currently unavailable. Start the backend server to search indexed files and get evidence-based answers.",
-            mode: "offline",
-          }]);
+        } catch (err) {
+          const isFetchError = err instanceof TypeError && /fetch|network/i.test(err.message);
+          if (isFetchError) {
+            setAnswerMode("offline");
+            setMessages((prev) => [...prev, {
+              role: "assistant",
+              text: "The backend is currently unavailable. Start the backend server to search indexed files and get evidence-based answers.",
+              mode: "offline",
+            }]);
+          } else {
+            setMessages((prev) => [...prev, {
+              role: "assistant",
+              text: `Search could not process that query. Try simpler keywords or remove punctuation.\n\nSuggestions:\n• Use short keyword phrases like "SLA latency" or "source list"\n• Avoid full sentences with question marks`,
+              mode: "retrieval",
+            }]);
+          }
         }
       }
     } else {
