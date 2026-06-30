@@ -4,11 +4,26 @@ import re
 
 from app.db.database import get_connection
 
+# Common English stopwords that dilute FTS5 results in natural-language queries.
+_STOPWORDS = frozenset({
+    'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'do', 'does', 'did', 'have', 'has', 'had', 'having',
+    'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those',
+    'am', 'will', 'would', 'shall', 'should', 'may', 'might', 'can', 'could',
+    'i', 'me', 'my', 'we', 'our', 'you', 'your', 'he', 'she', 'it', 'they', 'them',
+    'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'about',
+    'if', 'then', 'so', 'as', 'but', 'and', 'or', 'not',
+    'there', 'here', 'where', 'when', 'how', 'why',
+    'all', 'any', 'no', 'nor', 'some', 'such',
+    'still', 'also', 'just', 'than', 'very', 'too',
+})
+
 
 def sanitise_fts_query(query: str) -> str:
     """Sanitise a user query for safe FTS5 MATCH usage.
 
     - Strips FTS5 operators and special characters that cause syntax errors.
+    - Removes common English stopwords to improve relevance.
     - Keeps alphanumeric words, hyphens within words, and spaces.
     - Preserves FTS5 OR operator when used intentionally (e.g. scoped search).
     - Returns empty string if nothing useful remains.
@@ -24,7 +39,10 @@ def sanitise_fts_query(query: str) -> str:
     # Remove FTS5 reserved words if they appear as the entire (single-word) query
     if q.upper() in ('AND', 'OR', 'NOT', 'NEAR'):
         return ''
-    return q
+    # Strip stopwords — but preserve OR (used by scoped search)
+    words = q.split()
+    filtered = [w for w in words if w.lower() not in _STOPWORDS or w.upper() == 'OR']
+    return ' '.join(filtered)
 
 
 def search_chunks(query: str, limit: int = 20) -> list[dict]:

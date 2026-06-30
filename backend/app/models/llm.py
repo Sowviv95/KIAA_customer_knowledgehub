@@ -69,3 +69,24 @@ class GroundedSearchResponse(BaseModel):
     evidence_count: int
     sources: list[SourceInfo] = []
     usage: UsageInfo | None = None
+
+
+# --- File summary (LLM-grounded) ---
+
+
+class FileSummaryRequest(BaseModel):
+    file_id: int
+    model: str | None = None
+    max_tokens: int = 500
+
+
+class FileSummaryResponse(BaseModel):
+    file_id: int
+    file_name: str
+    summary: str
+    key_points: list[str] = []
+    topics: list[str] = []
+    model: str | None = None
+    evidence_count: int = 0
+    called_llm: bool = False
+    usage: UsageInfo | None = None

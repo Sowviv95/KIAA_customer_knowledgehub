@@ -61,3 +61,23 @@ export async function getGroundedAnswer(
     max_tokens: maxTokens,
   });
 }
+
+// --- File summary (LLM-grounded) ---
+
+export interface FileSummaryResponse {
+  file_id: number;
+  file_name: string;
+  summary: string;
+  key_points: string[];
+  topics: string[];
+  model: string | null;
+  evidence_count: number;
+  called_llm: boolean;
+  usage: GroundedUsage | null;
+}
+
+export async function getFileSummary(fileId: number): Promise<FileSummaryResponse> {
+  return apiPost<FileSummaryResponse>("/llm/file-summary", {
+    file_id: fileId,
+  });
+}

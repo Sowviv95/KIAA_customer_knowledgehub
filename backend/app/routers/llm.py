@@ -1,4 +1,4 @@
-"""LLM endpoints — status, grounded answer test, and production grounded answer."""
+"""LLM endpoints — status, grounded answer test, production grounded answer, and file summary."""
 
 from fastapi import APIRouter, HTTPException
 
@@ -8,11 +8,14 @@ from app.models.llm import (
     GroundedAnswerResponse,
     GroundedSearchRequest,
     GroundedSearchResponse,
+    FileSummaryRequest,
+    FileSummaryResponse,
 )
 from app.services.llm_provider import (
     get_llm_status,
     generate_grounded_answer,
     grounded_search_answer,
+    generate_file_summary,
 )
 
 router = APIRouter()
@@ -75,5 +78,26 @@ def grounded_answer(req: GroundedSearchRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Grounded answer failed: {e}")
+
+    return result
+
+
+@router.post("/file-summary", response_model=FileSummaryResponse)
+def file_summary(req: FileSummaryRequest):
+    """Generate an LLM-grounded summary for a single parsed file.
+
+    Reads parsed chunks from the database — no file upload.
+    Uses the configured LLM to produce a structured summary.
+    """
+    try:
+        result = generate_file_summary(
+            file_id=req.file_id,
+            model=req.model,
+            max_tokens=req.max_tokens,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"File summary failed: {e}")
 
     return result

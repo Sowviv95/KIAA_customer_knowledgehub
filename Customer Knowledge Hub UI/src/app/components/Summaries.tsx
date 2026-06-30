@@ -17,6 +17,7 @@ import { getDashboardStats, type DashboardStats } from "../api/dashboardApi";
 import { apiGet } from "../api/client";
 import { downloadCsv, downloadMarkdown } from "../api/exportUtils";
 import { getTrackedTopics } from "../api/topicsConfigApi";
+import { getLLMStatus, getFileSummary, type FileSummaryResponse } from "../api/llmApi";
 import {
   getAIStatus, extractAICandidates, listAICandidates, reviewAICandidate,
   convertCandidateToRequirement, convertCandidateToAction,
@@ -962,6 +963,101 @@ function BackendTimelineView({ onOpenDrawer, onOpenAsk, highlightedTopics }: { o
 
 // ─── Backend-connected File Summaries ────────────────────────────────────────
 
+/** Deterministic file summary from metadata + first chunk excerpt. */
+function generateFileSummary(f: FileSummaryItem): string | null {
+  if (f.summary_status === "Missing") return null;
+  if (f.chunk_count === 0) return null;
+
+  const parts: string[] = [];
+
+  // File purpose from category + file type
+  const catDesc: Record<string, string> = {
+    Schema:          "Schema/API field definition file",
+    "Source List":   "Data source coverage file",
+    RFP:            "Customer-provided requirements document",
+    "Meeting Notes": "Meeting notes document",
+    Email:          "Customer email correspondence",
+    Deck:           "Presentation deck",
+    Document:       "Reference document",
+  };
+  const desc = catDesc[f.category] || "Indexed file";
+  parts.push(`**${desc}** (${f.file_type})`);
+
+  // Extract structure hints from first chunk
+  if (f.first_chunk_excerpt) {
+    const excerpt = f.first_chunk_excerpt;
+
+    // XLSX/CSV: detect column headers from pipe-delimited or tab-delimited first line
+    if (["XLSX", "CSV", "XLS"].includes(f.file_type.toUpperCase())) {
+      const lines = excerpt.split("\n").filter((l) => l.trim());
+      // Look for a header-like line (contains pipes or multiple uppercase words)
+      const headerLine = lines.find((l) => l.includes("|")) || lines[0] || "";
+      if (headerLine.includes("|")) {
+        const cols = headerLine.split("|").map((c) => c.trim()).filter(Boolean).slice(0, 8);
+        if (cols.length > 1) {
+          parts.push(`Key columns: ${cols.join(", ")}`);
+        }
+      }
+      // Sheet detection
+      const sheetMatch = excerpt.match(/\[Sheet:\s*(.+?)\]/g);
+      if (sheetMatch) {
+        parts.push(`Contains ${sheetMatch.length} sheet${sheetMatch.length > 1 ? "s" : ""}: ${sheetMatch.map((s) => s.replace(/\[Sheet:\s*/, "").replace("]", "")).join(", ")}`);
+      }
+    }
+
+    // YAML/JSON schema: detect key fields
+    if (["YAML", "YML", "JSON"].includes(f.file_type.toUpperCase())) {
+      const fieldMatches = excerpt.match(/\b(?:type|required|description|properties|paths|definitions)\b/gi);
+      if (fieldMatches) {
+        const unique = [...new Set(fieldMatches.map((m) => m.toLowerCase()))];
+        parts.push(`Schema elements detected: ${unique.join(", ")}`);
+      }
+      const versionMatch = excerpt.match(/version[:\s]+["']?([\d.]+)/i);
+      if (versionMatch) {
+        parts.push(`Version: ${versionMatch[1]}`);
+      }
+    }
+
+    // Meeting notes / emails: detect topic areas from headings or keywords
+    if (["Meeting Notes", "Email"].includes(f.category)) {
+      const topicKeywords = ["SLA", "schema", "API", "source list", "monitoring", "action item", "follow-up",
+        "scope", "delivery", "timeline", "commercial", "pricing", "support", "OFAC", "sanctions"];
+      const found = topicKeywords.filter((kw) => excerpt.toLowerCase().includes(kw.toLowerCase()));
+      if (found.length > 0) {
+        parts.push(`Topics mentioned: ${found.slice(0, 6).join(", ")}`);
+      }
+    }
+
+    // Deck: detect key themes
+    if (f.category === "Deck") {
+      const themes = ["architecture", "pipeline", "solution", "roadmap", "proposal", "integration", "delivery"];
+      const found = themes.filter((t) => excerpt.toLowerCase().includes(t));
+      if (found.length > 0) {
+        parts.push(`Covers: ${found.join(", ")}`);
+      }
+    }
+
+    // RFP: detect requirement signals
+    if (f.category === "RFP") {
+      const signals = ["Phase 1", "Phase 2", "scope", "accuracy", "SLA", "latency", "pricing", "compliance", "OFAC"];
+      const found = signals.filter((s) => excerpt.toLowerCase().includes(s.toLowerCase()));
+      if (found.length > 0) {
+        parts.push(`Requirement areas: ${found.slice(0, 6).join(", ")}`);
+      }
+    }
+  }
+
+  // Relevance
+  if (f.customer_relevance && f.customer_relevance !== "Reference") {
+    parts.push(`Relevance: ${f.customer_relevance}`);
+  }
+
+  // Chunk count
+  parts.push(`${f.chunk_count} parsed chunk${f.chunk_count !== 1 ? "s" : ""} indexed`);
+
+  return parts.join(". ") + ".";
+}
+
 const STATUS_STYLE: Record<string, { bg: string; text: string }> = {
   Done:    { bg: "rgba(22,163,74,0.08)",  text: "#16a34a" },
   Pending: { bg: "rgba(217,119,6,0.08)",  text: "#d97706" },
@@ -976,6 +1072,11 @@ function BackendFileSummariesView({ onOpenDrawer, onOpenAsk }: { onOpenDrawer: (
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [catFilter, setCatFilter] = useState<string>("All");
 
+  // LLM file summary state
+  const [llmAvailable, setLlmAvailable] = useState(false);
+  const [llmSummary, setLlmSummary] = useState<FileSummaryResponse | null>(null);
+  const [llmLoading, setLlmLoading] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -985,9 +1086,33 @@ function BackendFileSummariesView({ onOpenDrawer, onOpenAsk }: { onOpenDrawer: (
       } catch {
         if (!cancelled) { setError(true); setLoading(false); }
       }
+      // Check LLM availability
+      try {
+        const status = await getLLMStatus();
+        if (!cancelled) setLlmAvailable(status.configured);
+      } catch { /* LLM not available */ }
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Fetch LLM summary when a parsed file is selected
+  useEffect(() => {
+    if (!selectedId || !llmAvailable) { setLlmSummary(null); return; }
+    const file = files.find((f) => f.id === selectedId);
+    if (!file || file.chunk_count === 0) { setLlmSummary(null); return; }
+
+    let cancelled = false;
+    setLlmSummary(null);
+    setLlmLoading(true);
+    (async () => {
+      try {
+        const res = await getFileSummary(selectedId);
+        if (!cancelled) setLlmSummary(res);
+      } catch { /* fallback to deterministic */ }
+      if (!cancelled) setLlmLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [selectedId, llmAvailable, files]);
 
   if (loading) {
     return (
@@ -1104,11 +1229,79 @@ function BackendFileSummariesView({ onOpenDrawer, onOpenAsk }: { onOpenDrawer: (
               </div>
             </div>
 
-            {/* Preview */}
+            {/* File Summary — LLM or deterministic fallback */}
+            {llmSummary && llmSummary.called_llm ? (
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div style={{ color: "#6b7280", fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase" }}>File Summary</div>
+                  <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(234,88,12,0.08)", color: "#ea580c", fontSize: "0.58rem", fontWeight: 600, border: "1px solid rgba(234,88,12,0.15)" }}>
+                    LLM Summary — grounded in parsed evidence
+                  </span>
+                </div>
+                <div className="rounded-lg px-4 py-3" style={{ background: "rgba(234,88,12,0.03)", border: "1px solid rgba(234,88,12,0.12)", borderLeft: "3px solid #ea580c" }}>
+                  <p style={{ color: "#374151", fontSize: "0.82rem", lineHeight: 1.75 }}>{llmSummary.summary}</p>
+                  {llmSummary.key_points.length > 0 && (
+                    <ul className="mt-2" style={{ paddingLeft: 16 }}>
+                      {llmSummary.key_points.map((pt, i) => (
+                        <li key={i} style={{ color: "#374151", fontSize: "0.78rem", lineHeight: 1.7, listStyleType: "disc" }}>{pt}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {llmSummary.topics.length > 0 && (
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      {llmSummary.topics.map((t) => (
+                        <span key={t} className="px-2 py-0.5 rounded-full" style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: "0.62rem", fontWeight: 500, border: "1px solid rgba(22,163,74,0.22)" }}>{t}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2" style={{ color: "#9ca3af", fontSize: "0.58rem" }}>
+                    {llmSummary.model} · {llmSummary.evidence_count} chunk{llmSummary.evidence_count !== 1 ? "s" : ""} used
+                    {llmSummary.usage && <> · ~{llmSummary.usage.total_tokens} tokens</>}
+                  </div>
+                </div>
+              </div>
+            ) : llmLoading ? (
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div style={{ color: "#6b7280", fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase" }}>File Summary</div>
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(234,88,12,0.08)", color: "#ea580c", fontSize: "0.58rem", fontWeight: 600, border: "1px solid rgba(234,88,12,0.15)" }}>
+                    <Loader2 size={8} className="animate-spin" /> Generating LLM summary...
+                  </span>
+                </div>
+                {/* Show deterministic summary while LLM loads */}
+                {(() => {
+                  const fallback = generateFileSummary(selected);
+                  return fallback ? (
+                    <div className="rounded-lg px-4 py-3" style={{ background: "rgba(22,163,74,0.04)", border: "1px solid rgba(22,163,74,0.12)", borderLeft: "3px solid #16a34a" }}>
+                      <p style={{ color: "#374151", fontSize: "0.82rem", lineHeight: 1.75 }}
+                        dangerouslySetInnerHTML={{ __html: fallback.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                    </div>
+                  ) : null;
+                })()}
+              </div>
+            ) : (() => {
+              const fallback = generateFileSummary(selected);
+              return fallback ? (
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div style={{ color: "#6b7280", fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase" }}>File Summary</div>
+                    <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(107,114,128,0.06)", color: "#9ca3af", fontSize: "0.58rem", fontWeight: 600, border: "1px solid rgba(107,114,128,0.15)" }}>
+                      Deterministic — based on file metadata
+                    </span>
+                  </div>
+                  <div className="rounded-lg px-4 py-3" style={{ background: "rgba(22,163,74,0.04)", border: "1px solid rgba(22,163,74,0.12)", borderLeft: "3px solid #16a34a" }}>
+                    <p style={{ color: "#374151", fontSize: "0.82rem", lineHeight: 1.75 }}
+                      dangerouslySetInnerHTML={{ __html: fallback.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
+            {/* Parsed Content Preview */}
             {selected.first_chunk_excerpt ? (
               <div>
                 <div style={{ color: "#6b7280", fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 8 }}>Parsed Content Preview</div>
-                <div className="rounded-lg px-4 py-3" style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.06)", borderLeft: "3px solid #16a34a" }}>
+                <div className="rounded-lg px-4 py-3" style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.06)", borderLeft: "3px solid #7c3aed" }}>
                   <p style={{ color: "#374151", fontSize: "0.78rem", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
                     {selected.first_chunk_excerpt}
                   </p>
